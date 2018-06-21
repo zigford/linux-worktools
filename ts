@@ -8,8 +8,6 @@ import pathlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument("hostname", help="hostname to connect to")
-parser.add_argument("-l", "--list", help="list vms on a host",
-                    action="store_true")
 parser.add_argument("-a", "--admin", help="use admin account",
                     action="store_true")
 parser.add_argument("-v", "--vmname", help="enter vm name on host to connect",
