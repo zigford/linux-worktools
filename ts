@@ -16,6 +16,9 @@ parser.add_argument("-v", "--vmname", help="enter vm name on host to connect",
                     type=str)
 parser.add_argument("-f", "--fullscreen", 
                     help="enter session in fullscreen mode", action="store_true")
+parser.add_argument("-u", "--username", help="enter a custom username",
+                    type=str)
+parser.add_argument("-d", "--debug", help="enable debug output", action="store_true")
 args = parser.parse_args()
 
 config = configparser.ConfigParser()
@@ -30,7 +33,10 @@ defuser = config['DEFAULT']['user']
 if args.admin:
     user = config[config['DEFAULT']['admin']]
 else:
-    user = config[config['DEFAULT']['user']]
+    if args.username:
+        user = config[args.username]
+    else:
+        user = config[config['DEFAULT']['user']]
 
 username = user['domain'] + '\\' + user['username']
 pw = user['password']
@@ -47,11 +53,29 @@ if args.vmname:
 
 ip = socket.gethostbyname(str(args.hostname) + ".usc.internal")
 cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", 
-        "/u:{}".format(username), "/p:{}".format(pw)]
+        "/u:{}".format(username), "/p:{}".format(pw),
+        "/dynamic-resolution"]
 if args.vmname:
     cmdargs.append("/vmconnect:{}".format(str(vmguid)))
 if args.fullscreen:
-    cmdargs.append("/f")
+    # Attempt to get almost fullscreen by getting current resolution
+    xrandrOut = subprocess.check_output(["xrandr"])
+    for line in xrandrOut.splitlines():
+        line = str(line)
+        if "primary" in line:
+            res = line.split(" ")[3].split('+')[0]
+            x = res.split('x')[0]
+            y = res.split('x')[1]
 
-result = subprocess.Popen(cmdargs)
+    if x and y:
+        cmdargs.append("/h:{}".format(int(y) - 60))
+        cmdargs.append("/w:{}".format(int(x)))
+    else:
+        cmdargs.append("/f")
+
+if args.debug:
+    result = subprocess.Popen(cmdargs)
+else:
+    result = subprocess.Popen(cmdargs, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL)
 

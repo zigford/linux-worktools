@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+import argparse
+import pathlib
+import os
+import sqlite3
+import sys
+
+# function decs
+def yes_or_no(question):
+    reply = str(input(question+' (y/n): ')).lower().strip()
+    if reply[0] == 'y':
+        return True
+    if reply[0] == 'n':
+        return False
+    else:
+        return yes_or_no("Uhhhh... please enter ")
+
+parser = argparse.ArgumentParser()
+parser.add_argument('hostname', nargs='?', help='Host to connect to')
+parser.add_argument('--search', '-s', help='Pattern to search host')
+args = parser.parse_args()
+
+# Check if db is setup
+dbdir  = pathlib.Path(os.environ['HOME'] + "/.ts")
+dbpath = dbdir.joinpath('db.db')
+
+if dbdir.exists() == False:
+    dbdir.mkdir()
+elif dbdir.is_dir() == False:
+    sys.exit("Unexpected: ~/.ts is a file")
+
+if dbpath.is_dir():
+    sys.exit("Unexpected: ~/.ts/db.db is a dir")
+
+if dbpath.exists() == False:
+    flagDbSetup = True
+else:
+    flagDbSetup = False
+
+#Connect to the DB
+conn = sqlite3.connect(str(dbpath))
+c = conn.cursor()
+
+if flagDbSetup:
+    c.execute('''CREATE TABLE hosts
+              (hostname text, lastip text, type text, defaultuser text)''')
+    c.execute('''CREATE TABLE users
+              (username text, domain text, password text)''')
+    conn.commit()
+
+if args.search   == "search":
+    hdir = pathlib.Path(os.environ['HOME'] + "/.ts") 
+elif args.hostname:
+    c.execute("SELECT * FROM hosts WHERE hostname = '{}'"
+              .format(args.hostname))
+    if c.fetchone() == None:
+        if yes_or_no("not found, try?"):
+            print("no previous connection. attempt?")
+
+conn.commit()
+conn.close()
