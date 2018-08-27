@@ -42,7 +42,7 @@ def getIndex(kernel):
 def updateGrub(default):
     for line in fileinput.input('/etc/default/grub', inplace=1, backup=".bak"):
         if 'GRUB_DEFAULT' in line:
-            sys.stdout.write("GRUB_DEFAULT={}".format(default))
+            sys.stdout.write('GRUB_DEFAULT="{}"\n'.format(default))
         else:
             sys.stdout.write(line)
 
