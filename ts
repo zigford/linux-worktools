@@ -20,6 +20,8 @@ parser.add_argument("-f", "--fullscreen",
                     help="enter session in fullscreen mode", action="store_true")
 parser.add_argument("-u", "--username", help="enter a custom username",
                     type=str)
+parser.add_argument("-s", "--shortcut",
+                    help="enter shortcut name", action="store_true")
 parser.add_argument("-r", "--redirection",
                     help="Enable home drive redirection",
                     action="store_true")
@@ -34,20 +36,29 @@ config.read(str(cFile))
 if not config.sections():
     sys.exit("Failed to read config")
 
-defuser = config['DEFAULT']['user']
+user = config[config['DEFAULT']['user']]
+
+if args.shortcut:
+    shortcut = (config['shortcuts'][args.hostname]).split(';')
+    hostname = shortcut[0]
+    if len(shortcut) > 1:
+        args.vmname = shortcut[1]
+    if len(shortcut) == 3:
+        user = config[shortcut[2]]
+else:
+    hostname = args.hostname
+
 if args.admin:
     user = config[config['DEFAULT']['admin']]
 else:
     if args.username:
         user = config[args.username]
-    else:
-        user = config[config['DEFAULT']['user']]
 
 username = user['domain'] + '\\' + user['username']
 pw = user['password']
 
 if args.vmname:
-    vmpath = pathlib.Path("/home/harrisj/.ts/{}/{}".format(args.hostname,
+    vmpath = pathlib.Path("/home/harrisj/.ts/{}/{}".format(hostname,
                           args.vmname))
     if vmpath.is_file():
         print("Reading file {}".format(str(vmpath)))
@@ -56,8 +67,8 @@ if args.vmname:
     else:
         sys.exit("Wrong VM Name or no Guid file")
 
-ip = socket.gethostbyname(str(args.hostname) + ".usc.internal")
-cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", 
+ip = socket.gethostbyname(str(hostname) + ".usc.internal")
+cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", "/cert-ignore",  
         "/u:{}".format(username), "/p:{}".format(pw),
         "/dynamic-resolution"]
 if args.console:
