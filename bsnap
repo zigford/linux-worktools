@@ -1,0 +1,41 @@
+#!/bin/bash
+
+if [[ -n "$1" ]]
+then
+    case "$1" in
+        "-f")
+	    FULL_BACKUP=true
+	    ;;
+	*)
+	    echo "Usage: $0 [ -f (full backup) ]"
+	    exit
+	    ;;
+    esac
+fi
+
+DEST=/media/Data/Backups/Pi
+SNAPSHOTS='/mnt/btrfs/@snapshots'
+
+# Take a fresh snapshot
+
+snapshot=$(snapshot | awk 'BEGIN{FS="'\''"}{print$(NF-1)}')
+snapshot_name=${snapshot##*/}
+
+# Set snapshot to ro
+btrfs prop set -t subvol "$snapshot" ro true
+
+# check if there is a valid parent already sent for incremental
+lastsnap=$(ls -1 "${DEST}" | tail -1)
+
+# Send snapshot
+if [[ -d "${SNAPSHOTS}/${lastsnap%.xz}" ]] && [[ -z $FULL_BACKUP ]]
+then
+	echo "Found previous snapshot ${snapshot_name}"
+	echo "Sending incremental..."
+	btrfs send -v -p "${SNAPSHOTS}/${lastsnap%.xz}" "$snapshot" |
+	xz -c -T 4 > "${DEST}/${snapshot_name}.xz"
+else
+	echo "Sending full backup"
+	btrfs send -v "$snapshot" |
+	xz -c -T 4 > "${DEST}/${snapshot_name}.xz"
+fi
