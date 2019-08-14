@@ -85,6 +85,7 @@ if args.redirection:
     cmdargs.append("/drive:home,/home/harrisj")
 
 if args.debug:
+    print("Executing {}".format(cmdargs))
     result = subprocess.Popen(cmdargs)
 else:
     result = subprocess.Popen(cmdargs, stdout=subprocess.DEVNULL,
