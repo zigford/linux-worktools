@@ -78,15 +78,25 @@ if args.vmname:
 if args.fullscreen:
     # Attempt to get almost fullscreen by getting current resolution
     xrandrOut = subprocess.check_output(["xrandr"])
+    lookforconnected = False
     for line in xrandrOut.splitlines():
         line = str(line)
-        if "primary" in line:
-            res = line.split(" ")[3].split('+')[0]
-            x = res.split('x')[0]
-            y = res.split('x')[1]
+        if " connected " in line:
+            if "disconnected" in line:
+                lookforconnected = True
+            else:
+                res = line.split(" ")[2].split('+')[0]
+                x = res.split('x')[0]
+                y = res.split('x')[1]
+        if lookforconnected:
+            if " connected " in line:
+                res = line.split(" ")[2].split('+')[0]
+                x = res.split('x')[0]
+                y = res.split('x')[1]
+
 
     if x and y:
-        cmdargs.append("/h:{}".format(int(y) - 60))
+        cmdargs.append("/h:{}".format(int(y) - 70))
         cmdargs.append("/w:{}".format(int(x)))
     else:
         cmdargs.append("/f")
