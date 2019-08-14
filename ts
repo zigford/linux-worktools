@@ -20,6 +20,9 @@ parser.add_argument("-f", "--fullscreen",
                     help="enter session in fullscreen mode", action="store_true")
 parser.add_argument("-u", "--username", help="enter a custom username",
                     type=str)
+parser.add_argument("-r", "--redirection",
+                    help="Enable home drive redirection",
+                    action="store_true")
 parser.add_argument("-d", "--debug", help="enable debug output", action="store_true")
 args = parser.parse_args()
 
@@ -76,6 +79,10 @@ if args.fullscreen:
         cmdargs.append("/w:{}".format(int(x)))
     else:
         cmdargs.append("/f")
+
+if args.redirection:
+    cmdargs.append("/drive:auto,*")
+    cmdargs.append("/drive:home,/home/harrisj")
 
 if args.debug:
     result = subprocess.Popen(cmdargs)
