@@ -10,6 +10,8 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("hostname", help="hostname to connect to")
+parser.add_argument("-c", "--console", help="connect to console",
+                    action="store_true")
 parser.add_argument("-a", "--admin", help="use admin account",
                     action="store_true")
 parser.add_argument("-v", "--vmname", help="enter vm name on host to connect",
@@ -55,6 +57,8 @@ ip = socket.gethostbyname(str(args.hostname) + ".usc.internal")
 cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", 
         "/u:{}".format(username), "/p:{}".format(pw),
         "/dynamic-resolution"]
+if args.console:
+    cmdargs.append("/admin")
 if args.vmname:
     cmdargs.append("/vmconnect:{}".format(str(vmguid)))
 if args.fullscreen:
