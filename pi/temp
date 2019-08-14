@@ -1,0 +1,50 @@
+#!/bin/sh
+
+get_temp() {
+	echo $(($(cat /sys/class/thermal/thermal_zone0/temp) /1000))
+}
+
+get_freq() {
+	core=$1
+	freq=$(cat /sys/devices/system/cpu/cpu${core}/cpufreq/cpuinfo_cur_freq)
+	printf "$((($freq) / 1000))mhz "
+}
+
+get_cores() {
+	for core in $(seq 0 3); do get_freq $core; done
+}
+
+new_log() {
+	LOGFILE="${1:-$HOME/temp.log}"
+	if [ -f "${LOGFILE}" ]; then
+		while test -f "${LOGFILE}"; do
+			i=$((i + 1))
+			LOGFILE="${LOGFILE%%.*}.${i}.log"
+		done
+	fi
+	echo $LOGFILE
+}
+
+ldate() {
+	date "+%X %x"
+}
+
+case "$1" in
+    "-w")
+	while true; do
+	    printf "\r$(get_temp)"
+	    sleep 5s
+        done
+    ;;
+    "-l")
+        LOGFILE=$(new_log $2)
+	touch "${LOGFILE}"
+	while true; do
+		echo "$(ldate): $(get_temp) : $(get_cores)" | tee -a "$LOGFILE"
+		sleep 5s
+	done
+    ;;
+    *)
+	get_temp
+    ;;
+esac
