@@ -1,8 +1,0 @@
-#!/bin/bash
-
-if ! mount | grep -q '/mnt/btrfs'
-then
-	mount /mnt/btrfs
-fi
-
-btrfs subv snapshot / /mnt/btrfs/\@snapshots/\@root-`date +'%F-%T'`

@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# get volumes to snapshot
+_24hrs=86400
+_30days=2592000
+_1year=$((365 * 24 * 60 * 60))
+
+IFS=' ' vols=$(ls /mnt/btrfs/)
+
+mountvol() {
+    if ! mount | grep -q "$1"
+    then
+        mount $1
+    fi
+}
+
+fdate() {
+    date +'%F-%T'
+}
+
+snapshot() {
+    while IFS= read -r snapname
+    do
+        if [ "root" == "${snapname}" ]
+        then snaproot="/"
+        else snaproot="/${snapname}"
+        fi
+        snapdest="/mnt/btrfs/${snapname}"
+        mountvol "$snapdest"
+        btrfs subv snapshot \
+            "${snaproot}" \
+            "${snapdest}/@snapshots/@${snapname}-$(fdate)"
+    done
+}
+
+is_snapshot_in_24_hrs() {
+    snapshotdate=$(echo "$1" | awk -F'-' '{print $2"-"$3"-"$4" "$5}')
+    snapshotdate=$(date --date="$snapshotdate" +"%s")
+    now=$(date +"%s")
+    [[ $((now - snapshotdate)) -lt $_24hrs ]] || false && true
+}
+monthly_in_last_year() {
+    # Todo - switch awk to param expansion
+    while IFS= read -r snapshotname
+    do
+        snapshotdate=$(echo "$snapshotname" | awk -F'-' '{print $2"-"$3"-"$4" "$5}')
+        snapshotdate=$(date --date="$snapshotdate" +"%s")
+        now=$(date +"%s")
+        month=$(echo "$snapshotname" | awk -F'-' '{print $3}')
+        if [[ $((now - snapshotdate)) -lt $_1year  ]] &&
+           [[ $((now - snapshotdate)) -gt $_30days ]]
+        then
+            if [[ -z $lastmonth ]] || [[ "$lastmonth" != "$month" ]]
+            then
+                echo "$snapshotname"
+                lastmonth=$month
+            elif [[ "$lastmonth" == "$month" ]]
+            then
+                continue
+            fi
+        fi
+    done <<<$(ls $1)
+}
+
+list_daily_in_last_month() {
+    # Todo - switch awk to param expansion
+    while IFS= read -r snapshotname
+    do
+        snapshotdate=$(echo "$snapshotname" | awk -F'-' '{print $2"-"$3"-"$4" "$5}')
+        snapshotdate=$(date --date="$snapshotdate" +"%s")
+        now=$(date +"%s")
+        day=$(echo "$snapshotname" | awk -F'-' '{print $4}')
+        if [[ $((now - snapshotdate)) -lt $_30days ]] &&
+           [[ $((now - snapshotdate)) -gt $_24hrs  ]]
+        then
+            if [[ -z $lastday ]] || [[ "$lastday" != "$day" ]]
+            then
+                echo "$snapshotname"
+                lastday=$day
+            elif [[ "$lastday" == "$day" ]]
+            then
+                continue
+            fi
+
+        fi
+    done <<<$(ls $1)
+}
+
+get_keep_snapshots() {
+    monthly_in_last_year "$@"
+    list_daily_in_last_month "$@"
+    while IFS= read -r i
+    do
+        if is_snapshot_in_24_hrs $i 
+        then
+            echo "$i"
+        fi
+    done <<<"$(ls $1)"
+}
+
+invert_list() {
+    while IFS= read -r snapshot
+    do
+        in_list=no
+        while IFS= read -r keepsnap
+        do
+            if [[ "$keepsnap" == "$snapshot" ]]
+            then
+                in_list=yes
+            fi
+        done <<<"$1"
+        [[ "$in_list" == "no" ]] && echo "$snapshot"
+    done <<<"$(ls "$2")"
+}
+
+remove_snapshots() {
+    while IFS= read -r snapshot
+    do
+        echo "Removing ${1}/$snapshot"
+        btrfs subvol delete "${1}/$snapshot"
+    done
+}
+
+prune() {
+    # keeps last 24 hrs of snapshots
+    # keeps daily backups for the past month
+    # keeps weekly backups until disk threshold percentage is reached
+
+    # step 1. Build a list of backups to keep
+    # step 2. Invert the list
+    # step 3. delete snapshots in the list
+    # step 4. calculate space needed to get back to meet threshold
+    # step 5. build list of snapshots from oldest to newest with their exclusive space used
+    # step 6. build list of number of snapshots needed to delete to meet threshold
+    # step 7. delete list of snapshots
+    # step 6. delete oldest to
+    while IFS= read -r snapname
+    do
+        s="/mnt/btrfs/${snapname}/@snapshots"
+        invert_list "$(get_keep_snapshots "$s")" "$s" |
+        remove_snapshots "$s"
+    done
+}
+
+echo $vols | prune
+echo $vols | snapshot
