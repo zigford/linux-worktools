@@ -1,0 +1,18 @@
+#!/bin/bash
+
+usage() {
+    echo "$0 light | dark"
+    exit 1
+}
+
+[[ "$1" == "light" ]] || [[ "$1" == "dark" ]] || usage
+
+set-theme() {
+    pic="file://$HOME/Pictures/$2"
+    gsettings set org.gnome.desktop.interface gtk-theme $1
+    gsettings set org.gnome.desktop.background picture-uri "$pic" 
+    echo $3 > $HOME/.config/vim/mode
+}
+
+[[ "$1" == "light" ]] && set-theme Adwaita gnome-8533-1920x1200.jpg $1
+[[ "$1" == "dark"  ]] && set-theme Adwaita-dark GFf8Ks.jpg $1
