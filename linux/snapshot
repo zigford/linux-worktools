@@ -1,8 +1,11 @@
 #!/bin/bash
 
+set -o pipefail
+
 # get volumes to snapshot
 IFS=' ' vols=$(ls /mnt/btrfs/ | grep -v snapshots)
-SNAPROOT=/mnt/btrfs/snapshots
+LOCAL_SNAPSHOT_MOUNT=/mnt/btrfs/snapshots
+EXTERN_SNAPSHOT_MOUNT=/run/media/harrisj/7cb22d51-b8a7-45ee-b1a3-2f3db51c931f
 
 # constants
 _24hrs=86400
@@ -21,7 +24,9 @@ fdate() {
 }
 
 snapls() {
-    ls "${SNAPROOT}/" -1 | grep "$1"
+    SNAPPATH=$([[ -n "$2" ]] && echo "${2}" || echo "${LOCAL_SNAPSHOT_MOUNT}")
+    cd "${SNAPPATH}"
+    find * -maxdepth 0 -type d -name "${1}*" -print
 }
 
 snapshot() {
@@ -67,10 +72,10 @@ monthly_in_last_year() {
                 continue
             fi
         fi
-    done <<<$(snapls $1)
+    done <<<$(snapls $1 $2)
 }
 
-list_daily_in_last_month() {
+daily_in_last_month() {
     # Todo - switch awk to param expansion
     while IFS= read -r snapshotname
     do
@@ -91,19 +96,23 @@ list_daily_in_last_month() {
             fi
 
         fi
-    done <<<$(snapls $1)
+    done <<<$(snapls $1 $2)
 }
 
-get_keep_snapshots() {
-    monthly_in_last_year "$@"
-    list_daily_in_last_month "$@"
+hourly_in_last_day(){
     while IFS= read -r i
     do
         if is_snapshot_in_24_hrs $i 
         then
             echo "$i"
         fi
-    done <<<"$(snapls $1)"
+    done <<<"$(snapls $1 $2)"
+}
+
+get_keep_snapshots() {
+    monthly_in_last_year "$@"
+    daily_in_last_month "$@"
+    hourly_in_last_day "$@"
 }
 
 invert_list() {
@@ -120,14 +129,15 @@ invert_list() {
             fi
         done <<<"$NOTLIST"
         [[ "$in_list" == "no" ]] && echo "$snapshot"
-    done <<<"$(snapls "$SNAPVOLUME")"
+    done <<<"$(snapls "$SNAPVOLUME" $3)"
 }
 
 remove_snapshots() {
+    ROOT=$1
     while IFS= read -r snapshot
     do
-        echo "Removing ${SNAPROOT}/$snapshot"
-        btrfs subvol delete "${SNAPROOT}/$snapshot"
+        echo "Removing ${ROOT}/$snapshot"
+        btrfs subvol delete "${ROOT}/$snapshot"
     done
 }
 
@@ -144,13 +154,149 @@ prune() {
     # step 6. build list of number of snapshots needed to delete to meet threshold
     # step 7. delete list of snapshots
     # step 6. delete oldest to
-    while IFS= read -r snapname
+    ROOT="${1}"
+    while IFS= read -r vol
     do
-        s="${snapname:1}"
-        invert_list "$(get_keep_snapshots "$s")" "$s" |
-        remove_snapshots "$s"
+        vol="${vol:1}"
+        snaps_to_keep=$(get_keep_snapshots "$vol" $ROOT)
+        prune_list=$(invert_list "$snaps_to_keep" "$vol" "$ROOT")
+        num_to_prune=$(num_of_snaps "$prune_list")
+        [ "$num_to_prune" -eq 0 ] && continue
+        echo "keep $(num_of_snaps $snaps_to_keep) $vol snaps on $ROOT"
+        echo "prune $num_to_prune $vol snaps on $ROOT"
+        echo "$prune_list" | remove_snapshots "$ROOT"
     done
 }
 
-echo $vols | prune
+num_of_snaps(){
+    echo "$1" | grep -ce '\w\+'
+}
+
+only_in_a(){
+    OLDIFS=$IFS
+    IFS=$'\n'
+    a=$1
+    b=$2
+    for i in $a; {
+        in_b=false
+        for j in $b; {
+            if [[ "$i" == "$j" ]]; then
+                #echo "Ahah! $i is equal to $j"
+                in_b=true
+            fi
+        }
+        if ! $in_b; then echo $i; fi
+    }
+    IFS=$OLDIFS
+}
+
+a_and_b(){
+    OLDIFS=$IFS
+    IFS=$'\n'
+    a=$1
+    b=$2
+    for i in $a; {
+        in_b=false
+        for j in $b; {
+            if [[ "$i" == "$j" ]]; then
+                #echo "Ahah! $i is equal to $j"
+                in_b=true
+            fi
+        }
+        if $in_b; then echo $i; fi
+    }
+    IFS=$OLDIFS
+}
+
+send(){
+    OLDIFS=$IFS
+    IFS=$'\n'
+    list_to_backup=$1
+    possible_parents=$2
+    parent=$(echo "$possible_parents"|tail -1)
+    for i in $list_to_backup; do
+        if [[ -n $parent ]]
+        then
+            echo "backup $i with parent $parent"
+            btrfs send -p "${LOCAL_SNAPSHOT_MOUNT}/$parent" \
+                "${LOCAL_SNAPSHOT_MOUNT}/$i" |
+                btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
+            if [ $? != 0 ]; then
+                echo "An error occurred. Halting."
+                exit 1
+            fi
+        else
+            echo "full backup $i"
+            btrfs send "${LOCAL_SNAPSHOT_MOUNT}/$i" |
+                btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
+            if [ $? != 0 ]; then
+                echo "An error occurred. Halting."
+                exit 1
+            fi
+        fi
+        parent=$i
+    done
+    IFS=$OLDIFS
+}
+
+prune_but_keep_some(){
+    OLDIFS=$IFS
+    IFS=$'\n'
+    list=$1
+    new_list=$(echo "$list"|head -n -2)
+    for i in $new_list; do
+        echo "removing $i"
+        btrfs subvol delete "${LOCAL_SNAPSHOT_MOUNT}/$i"
+        if [ $? != 0 ]; then
+            echo "An error occurred. Halting"
+            exit 1
+        fi
+    done
+
+    IFS=$OLDIFS
+}
+
+backup_snapshots(){
+    # 1. Check what the last snapshot on the extern is
+    # 2. Check we also have that locally
+    # 3. Get a list of the next load of snapshots in
+    #    sequence is.
+    # 4. Foreach one, send it across and once it is send
+    #    delete it locally except the last one.
+    while IFS= read -r vol
+    do
+        vol="${vol:1}"
+        all_extern_snaps=$(snapls "${vol}" "${EXTERN_SNAPSHOT_MOUNT}")
+        all_intern_snaps=$(snapls "${vol}")
+        num_of_extern_snaps=$(num_of_snaps $all_extern_snaps)
+        num_of_intern_snaps=$(num_of_snaps $all_intern_snaps)
+        echo "there are $num_of_intern_snaps snapshots of $vol"
+        [ "$num_of_intern_snaps" == 0 ] && 
+            echo "skipping $vol" && continue
+        # get a list of snapshots that don't exist on intern yet
+        # get a list of snapshots that exist on both
+        only_intern=$(only_in_a $all_intern_snaps $all_extern_snaps)
+        num_only_intern=$(num_of_snaps $only_intern)
+        [ "$num_only_intern" == 0 ] &&
+            echo "none to send for $vol" && continue
+        intern_and_extern=$(a_and_b $all_intern_snaps $all_extern_snaps)
+        echo "need to send over $num_only_intern"
+        send "$only_intern" "$intern_and_extern"
+        prune_but_keep_some "$all_intern_snaps"
+    done
+}
+
 echo $vols | snapshot
+echo $vols | prune "${LOCAL_SNAPSHOT_MOUNT}"
+
+if [[ "$1" == "-b" ]]
+then
+    if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
+    then
+        echo "attempting to backup to external disk"
+        echo $vols | backup_snapshots
+        echo $vols | prune "${EXTERN_SNAPSHOT_MOUNT}"
+    else
+        echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
+    fi
+fi
