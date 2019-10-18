@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # get volumes to snapshot
+IFS=' ' vols=$(ls /mnt/btrfs/ | grep -v snapshots)
+SNAPROOT=/mnt/btrfs/snapshots
+
+# constants
 _24hrs=86400
 _30days=2592000
 _1year=$((365 * 24 * 60 * 60))
-
-IFS=' ' vols=$(ls /mnt/btrfs/)
 
 mountvol() {
     if ! mount | grep -q "$1"
@@ -18,18 +20,23 @@ fdate() {
     date +'%F-%T'
 }
 
+snapls() {
+    ls "${SNAPROOT}/" -1 | grep "$1"
+}
+
 snapshot() {
     while IFS= read -r snapname
     do
+        snapname=${snapname:1}
         if [ "root" == "${snapname}" ]
         then snaproot="/"
         else snaproot="/${snapname}"
         fi
-        snapdest="/mnt/btrfs/${snapname}"
-        mountvol "$snapdest"
-        btrfs subv snapshot \
+        snapdest="/mnt/btrfs/snapshots/"
+        [[ ! -d "${snapdest}" ]] && mkdir "${snapdest}"
+        btrfs subv snapshot -r \
             "${snaproot}" \
-            "${snapdest}/@snapshots/@${snapname}-$(fdate)"
+            "${snapdest}/${snapname}-$(fdate)"
     done
 }
 
@@ -39,6 +46,7 @@ is_snapshot_in_24_hrs() {
     now=$(date +"%s")
     [[ $((now - snapshotdate)) -lt $_24hrs ]] || false && true
 }
+
 monthly_in_last_year() {
     # Todo - switch awk to param expansion
     while IFS= read -r snapshotname
@@ -59,7 +67,7 @@ monthly_in_last_year() {
                 continue
             fi
         fi
-    done <<<$(ls $1)
+    done <<<$(snapls $1)
 }
 
 list_daily_in_last_month() {
@@ -83,7 +91,7 @@ list_daily_in_last_month() {
             fi
 
         fi
-    done <<<$(ls $1)
+    done <<<$(snapls $1)
 }
 
 get_keep_snapshots() {
@@ -95,10 +103,12 @@ get_keep_snapshots() {
         then
             echo "$i"
         fi
-    done <<<"$(ls $1)"
+    done <<<"$(snapls $1)"
 }
 
 invert_list() {
+    NOTLIST="$1"
+    SNAPVOLUME="$2"
     while IFS= read -r snapshot
     do
         in_list=no
@@ -108,16 +118,16 @@ invert_list() {
             then
                 in_list=yes
             fi
-        done <<<"$1"
+        done <<<"$NOTLIST"
         [[ "$in_list" == "no" ]] && echo "$snapshot"
-    done <<<"$(ls "$2")"
+    done <<<"$(snapls "$SNAPVOLUME")"
 }
 
 remove_snapshots() {
     while IFS= read -r snapshot
     do
-        echo "Removing ${1}/$snapshot"
-        btrfs subvol delete "${1}/$snapshot"
+        echo "Removing ${SNAPROOT}/$snapshot"
+        btrfs subvol delete "${SNAPROOT}/$snapshot"
     done
 }
 
@@ -136,7 +146,7 @@ prune() {
     # step 6. delete oldest to
     while IFS= read -r snapname
     do
-        s="/mnt/btrfs/${snapname}/@snapshots"
+        s="${snapname:1}"
         invert_list "$(get_keep_snapshots "$s")" "$s" |
         remove_snapshots "$s"
     done
