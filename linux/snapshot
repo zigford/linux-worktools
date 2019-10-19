@@ -286,11 +286,7 @@ backup_snapshots(){
     done
 }
 
-echo $vols | snapshot
-echo $vols | prune "${LOCAL_SNAPSHOT_MOUNT}"
-
-if [[ "$1" == "-b" ]]
-then
+attempt_extern_backup(){
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
     then
         echo "attempting to backup to external disk"
@@ -299,4 +295,13 @@ then
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
     fi
+}
+
+if [[ "$1" == "-b" ]]
+then
+    attempt_extern_backup
+else
+    echo $vols | snapshot
+    echo $vols | prune "${LOCAL_SNAPSHOT_MOUNT}"
+    attempt_extern_backup
 fi
