@@ -1,0 +1,6 @@
+[Unit]
+Description=Take a BTRFS Snapshot of all the volumes
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/snapshot

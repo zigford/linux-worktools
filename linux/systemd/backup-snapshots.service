@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup snapshots when backup drive is attached
+Requires=run-media-harrisj-7cb22d51\x2db8a7\x2d45ee\x2db1a3\x2d2f3db51c931f.mount
+After=run-media-harrisj-7cb22d51\x2db8a7\x2d45ee\x2db1a3\x2d2f3db51c931f.mount
+
+[Service]
+ExecStart=/usr/local/bin/snapshot -b
+
+[Install]
+WantedBy=run-media-harrisj-7cb22d51\x2db8a7\x2d45ee\x2db1a3\x2d2f3db51c931f.mount

@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer file for snapshot unit. Snapshots hourly and continually prunes
+
+[Timer]
+OnCalendar=*-*-* *:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
