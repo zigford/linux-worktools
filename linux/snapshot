@@ -31,8 +31,7 @@ fdate() {
 }
 
 snapls() {
-    SNAPPATH=$([[ -n "$2" ]] && echo "${2}" || echo "${LOCAL_SNAPSHOT_MOUNT}")
-    cd "${SNAPPATH}"
+    cd "${2}"
     find . -maxdepth 1 -type d -maxdepth 1 \
         -name "${1}*" -printf '%f\n'
 }
@@ -45,7 +44,7 @@ snapshot() {
         then snaproot="/"
         else snaproot="/${snapname}"
         fi
-        snapdest="${LOCAL_SNAPSHOT_MOUNT}"
+        snapdest="${1}"
         [[ ! -d "${snapdest}" ]] && mkdir "${snapdest}"
         btrfs subv snapshot -r \
             "${snaproot}" \
@@ -308,7 +307,7 @@ if [[ "$1" == "-b" ]]
 then
     attempt_extern_backup
 else
-    echo $SUBVOLUMES | snapshot
-    echo $SUBVOLUMES | prune "${LOCAL_SNAPSHOT_MOUNT}"
+    echo "$SUBVOLUMES" | snapshot "${LOCAL_SNAPSHOT_MOUNT}"
+    echo "$SUBVOLUMES" | prune "${LOCAL_SNAPSHOT_MOUNT}"
     attempt_extern_backup
 fi
