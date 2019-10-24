@@ -2,15 +2,22 @@
 
 set -o pipefail
 
-# get volumes to snapshot
-IFS=' ' vols=$(ls /mnt/btrfs/ | grep -v snapshots)
-LOCAL_SNAPSHOT_MOUNT=/mnt/btrfs/snapshots
-EXTERN_SNAPSHOT_MOUNT=/run/media/harrisj/7cb22d51-b8a7-45ee-b1a3-2f3db51c931f
-
 # constants
 _24hrs=86400
 _30days=2592000
 _1year=$((365 * 24 * 60 * 60))
+
+config_var(){
+    CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
+    CONF_FILE="${CONFIG}/snapshots/snapshots.conf"
+    if [[ -f "${CONF_FILE}" ]]
+    then
+        cat "${CONF_FILE}"|awk -v var="$1" -F= '{if ($0 ~ var) print$2}'
+    else
+        echo "Could not find config file" 1>&2
+        exit 1
+    fi
+}
 
 mountvol() {
     if ! mount | grep -q "$1"
@@ -26,18 +33,19 @@ fdate() {
 snapls() {
     SNAPPATH=$([[ -n "$2" ]] && echo "${2}" || echo "${LOCAL_SNAPSHOT_MOUNT}")
     cd "${SNAPPATH}"
-    find * -maxdepth 0 -type d -name "${1}*" -print
+    find . -maxdepth 1 -type d -maxdepth 1 \
+        -name "${1}*" -printf '%f\n'
 }
 
 snapshot() {
     while IFS= read -r snapname
     do
-        snapname=${snapname:1}
+        snapname=${snapname#@}
         if [ "root" == "${snapname}" ]
         then snaproot="/"
         else snaproot="/${snapname}"
         fi
-        snapdest="/mnt/btrfs/snapshots/"
+        snapdest="${LOCAL_SNAPSHOT_MOUNT}"
         [[ ! -d "${snapdest}" ]] && mkdir "${snapdest}"
         btrfs subv snapshot -r \
             "${snaproot}" \
@@ -123,6 +131,7 @@ invert_list() {
         in_list=no
         while IFS= read -r keepsnap
         do
+            [[ "$in_list" == "yes" ]] && continue
             if [[ "$keepsnap" == "$snapshot" ]]
             then
                 in_list=yes
@@ -157,9 +166,9 @@ prune() {
     ROOT="${1}"
     while IFS= read -r vol
     do
-        vol="${vol:1}"
+        vol="${vol#@}"
         snaps_to_keep=$(get_keep_snapshots "$vol" $ROOT)
-        prune_list=$(invert_list "$snaps_to_keep" "$vol" "$ROOT")
+        prune_list="$(invert_list "$snaps_to_keep" "$vol" "$ROOT")"
         num_to_prune=$(num_of_snaps "$prune_list")
         [ "$num_to_prune" -eq 0 ] && continue
         echo "keep $(num_of_snaps $snaps_to_keep) $vol snaps on $ROOT"
@@ -173,7 +182,6 @@ num_of_snaps(){
 }
 
 only_in_a(){
-    OLDIFS=$IFS
     IFS=$'\n'
     a=$1
     b=$2
@@ -187,11 +195,9 @@ only_in_a(){
         }
         if ! $in_b; then echo $i; fi
     }
-    IFS=$OLDIFS
 }
 
 a_and_b(){
-    OLDIFS=$IFS
     IFS=$'\n'
     a=$1
     b=$2
@@ -205,11 +211,9 @@ a_and_b(){
         }
         if $in_b; then echo $i; fi
     }
-    IFS=$OLDIFS
 }
 
 send(){
-    OLDIFS=$IFS
     IFS=$'\n'
     list_to_backup=$1
     possible_parents=$2
@@ -236,11 +240,9 @@ send(){
         fi
         parent=$i
     done
-    IFS=$OLDIFS
 }
 
 prune_but_keep_some(){
-    OLDIFS=$IFS
     IFS=$'\n'
     list=$1
     new_list=$(echo "$list"|head -n -2)
@@ -252,8 +254,6 @@ prune_but_keep_some(){
             exit 1
         fi
     done
-
-    IFS=$OLDIFS
 }
 
 backup_snapshots(){
@@ -265,24 +265,24 @@ backup_snapshots(){
     #    delete it locally except the last one.
     while IFS= read -r vol
     do
-        vol="${vol:1}"
+        vol="${vol#@}"
         all_extern_snaps=$(snapls "${vol}" "${EXTERN_SNAPSHOT_MOUNT}")
-        all_intern_snaps=$(snapls "${vol}")
-        num_of_extern_snaps=$(num_of_snaps $all_extern_snaps)
-        num_of_intern_snaps=$(num_of_snaps $all_intern_snaps)
+        all_intern_snaps=$(snapls "${vol}" "${LOCAL_SNAPSHOT_MOUNT}")
+        num_of_extern_snaps=$(num_of_snaps "$all_extern_snaps")
+        num_of_intern_snaps=$(num_of_snaps "$all_intern_snaps")
         echo "there are $num_of_intern_snaps snapshots of $vol"
         [ "$num_of_intern_snaps" == 0 ] && 
             echo "skipping $vol" && continue
         # get a list of snapshots that don't exist on intern yet
         # get a list of snapshots that exist on both
-        only_intern=$(only_in_a $all_intern_snaps $all_extern_snaps)
-        num_only_intern=$(num_of_snaps $only_intern)
+        only_intern=$(only_in_a "$all_intern_snaps" "$all_extern_snaps")
+        num_only_intern=$(num_of_snaps "$only_intern")
         [ "$num_only_intern" == 0 ] &&
             echo "none to send for $vol" && continue
-        intern_and_extern=$(a_and_b $all_intern_snaps $all_extern_snaps)
+        intern_and_extern=$(a_and_b "$all_intern_snaps" "$all_extern_snaps")
         echo "need to send over $num_only_intern"
-        send "$only_intern" "$intern_and_extern"
-        prune_but_keep_some "$all_intern_snaps"
+        send "$only_intern" "$intern_and_extern" || exit 1
+        prune_but_keep_some "$all_intern_snaps" || exit 1
     done
 }
 
@@ -290,18 +290,25 @@ attempt_extern_backup(){
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
     then
         echo "attempting to backup to external disk"
-        echo $vols | backup_snapshots
-        echo $vols | prune "${EXTERN_SNAPSHOT_MOUNT}"
+        echo $SUBVOLUMES | backup_snapshots
+        echo $SUBVOLUMES | prune "${EXTERN_SNAPSHOT_MOUNT}"
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
     fi
 }
 
+# get volumes to snapshot
+VOLUMES_ROOT_MOUNT=$(config_var "BtrfsRoot") || exit 1
+LOCAL_SNAPSHOT_MOUNT=$(config_var "LocalSnapshots") || exit 1
+EXTERN_SNAPSHOT_MOUNT=$(config_var "RemoteSnapshots") || exit 1 
+SUBVOLUMES=$(ls "${VOLUMES_ROOT_MOUNT}" | grep -v "${LOCAL_SNAPSHOT_MOUNT##*/}")
+
+
 if [[ "$1" == "-b" ]]
 then
     attempt_extern_backup
 else
-    echo $vols | snapshot
-    echo $vols | prune "${LOCAL_SNAPSHOT_MOUNT}"
+    #echo $SUBVOLUMES | snapshot
+    #echo $SUBVOLUMES | prune "${LOCAL_SNAPSHOT_MOUNT}"
     attempt_extern_backup
 fi
