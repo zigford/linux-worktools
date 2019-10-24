@@ -308,7 +308,7 @@ if [[ "$1" == "-b" ]]
 then
     attempt_extern_backup
 else
-    #echo $SUBVOLUMES | snapshot
-    #echo $SUBVOLUMES | prune "${LOCAL_SNAPSHOT_MOUNT}"
+    echo $SUBVOLUMES | snapshot
+    echo $SUBVOLUMES | prune "${LOCAL_SNAPSHOT_MOUNT}"
     attempt_extern_backup
 fi
