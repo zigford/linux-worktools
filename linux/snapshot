@@ -8,8 +8,9 @@ _30days=2592000
 _1year=$((365 * 24 * 60 * 60))
 
 config_var(){
-    CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-    CONF_FILE="${CONFIG}/snapshots/snapshots.conf"
+    # CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
+    # CONF_FILE="${CONFIG}/snapshots/snapshots.conf"
+    CONF_FILE="/etc/snapshots.conf"
     if [[ -f "${CONF_FILE}" ]]
     then
         cat "${CONF_FILE}"|awk -v var="$1" -F= '{if ($0 ~ var) print$2}'
@@ -289,8 +290,8 @@ attempt_extern_backup(){
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
     then
         echo "attempting to backup to external disk"
-        echo $SUBVOLUMES | backup_snapshots
-        echo $SUBVOLUMES | prune "${EXTERN_SNAPSHOT_MOUNT}"
+        echo "$SUBVOLUMES" | backup_snapshots
+        echo "$SUBVOLUMES" | prune "${EXTERN_SNAPSHOT_MOUNT}"
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
     fi
