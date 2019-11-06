@@ -297,6 +297,23 @@ attempt_extern_backup(){
     fi
 }
 
+test_running_send(){
+    pgrep() {
+        if ps aux | grep -v grep | grep -q "$1"
+        then
+            true
+        else
+            false
+        fi
+    }
+    if pgrep "btrfs send" || pgrep "btrfs receive"
+    then
+        true
+    else
+        false
+    fi
+}
+
 # get volumes to snapshot
 VOLUMES_ROOT_MOUNT=$(config_var "BtrfsRoot") || exit 1
 LOCAL_SNAPSHOT_MOUNT=$(config_var "LocalSnapshots") || exit 1
@@ -306,9 +323,19 @@ SUBVOLUMES=$(ls "${VOLUMES_ROOT_MOUNT}" | grep -v "${LOCAL_SNAPSHOT_MOUNT##*/}")
 
 if [[ "$1" == "-b" ]]
 then
-    attempt_extern_backup
+    if [[ test_running_send ]]
+    then
+        echo "Backup already in progress"
+    else
+        attempt_extern_backup
+    fi
 else
     echo "$SUBVOLUMES" | snapshot "${LOCAL_SNAPSHOT_MOUNT}"
     echo "$SUBVOLUMES" | prune "${LOCAL_SNAPSHOT_MOUNT}"
-    attempt_extern_backup
+    if [[ test_running_send ]]
+    then
+        echo "Backup already in progress"
+    else
+        attempt_extern_backup
+    fi
 fi
