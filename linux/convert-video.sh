@@ -53,6 +53,9 @@ get_params() {
             n_height=$(get_vheight 400)
             parms="-q:v 2.0 -c:v mjpeg -vf scale=400:${n_height%.*} -c:a adpcm_ima_wav -ar 16000 \"${INPUT_VIDEO%.*}-3ds.AVI\""
             ;;
+        gif)
+            params="filter_complex \"[0:v] fps=12,split [a][b];[a] palettegen [p];[b][p] paletteuse\""
+            ;;
         *)
             echo "Incorrect profile" && exit 1
             ;;
