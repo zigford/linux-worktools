@@ -459,7 +459,7 @@ int main(int argc, char *argv[])
   int level = 0;
   size_t nread;
   char buffer[1500];
-  char *u = "http://192.168.11.200/general/status.html"; /* default to testurl */
+  char u[512] = "http://192.168.11.200/general/status.html"; /* default to testurl */
   char *token;
   int s[4];
   int i = 0;
@@ -482,7 +482,7 @@ int main(int argc, char *argv[])
               sscanf(optarg, "%d", &w);
               break;
           case 'u':
-              sscanf(optarg, "%s", &u);
+              sscanf(optarg, "%s", u);
               break;
       }
   }
