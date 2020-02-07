@@ -67,7 +67,12 @@ if args.vmname:
     else:
         sys.exit("Wrong VM Name or no Guid file")
 
-ip = socket.gethostbyname(str(hostname) + ".usc.internal")
+if '.' in str(hostname):
+    hostname = str(hostname)
+else:
+    hostname = str(hostname) + ".usc.internal"
+
+ip = socket.gethostbyname(hostname)
 cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", "/cert-ignore",  
         "/u:{}".format(username), "/p:{}".format(pw),
         "/dynamic-resolution"]
