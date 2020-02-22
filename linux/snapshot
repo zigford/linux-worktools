@@ -8,19 +8,6 @@ _30days=2592000
 _1year=$((365 * 24 * 60 * 60))
 CONF_FILE="/etc/snapshots.conf"
 
-config_var(){
-    # CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-    # CONF_FILE="${CONFIG}/snapshots/snapshots.conf"
-    CONF_FILE="/etc/snapshots.conf"
-    if [[ -f "${CONF_FILE}" ]]
-    then
-        cat "${CONF_FILE}"|awk -v var="$1" -F= '{if ($0 ~ var) print$2}'
-    else
-        echo "Could not find config file" 1>&2
-        exit 1
-    fi
-}
-
 mountvol() {
     if ! mount | grep -q "$1"
     then
@@ -350,12 +337,20 @@ get_config() {
 
 }
 
+usage() {
+    echo -e "Usage: $0 [OPTION]...\n"
+    echo "-b, --backup-only         backup snapshots"
+    echo "-d, --dont-backup         take snapshots only"
+    echo "-n, --dry-run             output what would be done"
+}
+
 while test $# -gt 0
 do
     case "$1" in
         -b|--backup-only)   backup="true";shift;;
         -n|--dry-run)       noop="true";shift;;
         -d|--dont-backup)   backup="false";shift;;
+        -h|--help)          usage;exit 0;;
         *)                  break;;
     esac
 done
