@@ -32,6 +32,8 @@ snapshot() {
         btrfs subv snapshot -r \
             "${SUBVOLUME}" \
             "${LOCAL_SNAPSHOT_MOUNT}/${config}-$(fdate)"
+    else
+        echo "dry run snapshot ${SUBVOLUME}"
     fi
 }
 
@@ -127,10 +129,11 @@ remove_snapshots() {
     ROOT=$1
     while IFS= read -r snapshot
     do
-        echo "Removing ${ROOT}/$snapshot"
         if [[ -z "$noop" ]]
         then
             btrfs subvol delete "${ROOT}/$snapshot"
+        else
+            echo "dry run removing ${ROOT}/$snapshot"
         fi
     done
 }
@@ -148,13 +151,14 @@ prune() {
     # step 6. build list of number of snapshots needed to delete to meet threshold
     # step 7. delete list of snapshots
     # step 6. delete oldest to
-    snaps_to_keep=$(get_keep_snapshots "$config" $LOCAL_SNAPSHOT_MOUNT)
-    prune_list="$(invert_list "$snaps_to_keep" "$config" "$LOCAL_SNAPSHOT_MOUNT")"
+    ROOT="$1"
+    snaps_to_keep=$(get_keep_snapshots "$config" $ROOT)
+    prune_list="$(invert_list "$snaps_to_keep" "$config" "$ROOT")"
     num_to_prune=$(num_of_snaps "$prune_list")
     [ "$num_to_prune" -eq 0 ] && return
-    echo "keep $(num_of_snaps "$snaps_to_keep") $config snaps on $LOCAL_SNAPSHOT_MOUNT"
-    echo "prune $num_to_prune $config snaps on $LOCAL_SNAPSHOT_MOUNT"
-    echo "$prune_list" | remove_snapshots "$LOCAL_SNAPSHOT_MOUNT"
+    echo "keep $(num_of_snaps "$snaps_to_keep") $config snaps on $ROOT"
+    echo "prune $num_to_prune $config snaps on $ROOT"
+    echo "$prune_list" | remove_snapshots "$ROOT"
 }
 
 num_of_snaps(){
@@ -165,32 +169,34 @@ only_in_a(){
     IFS=$'\n'
     a=$1
     b=$2
-    for i in $a; {
+    for i in $a
+    do
         in_b=false
-        for j in $b; {
+        for j in $b
+        do
             if [[ "$i" == "$j" ]]; then
-                #echo "Ahah! $i is equal to $j"
                 in_b=true
             fi
-        }
+        done
         if ! $in_b; then echo $i; fi
-    }
+    done
 }
 
 a_and_b(){
     IFS=$'\n'
     a=$1
     b=$2
-    for i in $a; {
+    for i in $a
+    do
         in_b=false
-        for j in $b; {
+        for j in $b
+        do
             if [[ "$i" == "$j" ]]; then
-                #echo "Ahah! $i is equal to $j"
                 in_b=true
             fi
-        }
+        done
         if $in_b; then echo $i; fi
-    }
+    done
 }
 
 send(){
@@ -201,9 +207,9 @@ send(){
     for i in $list_to_backup; do
         if [[ -n $parent ]]
         then
-            echo "backup $i with parent $parent"
             if [[ -z "$noop" ]]
             then
+                echo "backup $i with parent $parent"
                 btrfs send -p "${LOCAL_SNAPSHOT_MOUNT}/$parent" \
                     "${LOCAL_SNAPSHOT_MOUNT}/$i" |
                     btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
@@ -211,17 +217,21 @@ send(){
                     echo "An error occurred. Halting."
                     exit 1
                 fi
+            else
+                echo "dry run send $i with parent $parent"
             fi
         else
-            echo "full backup $i"
             if [[ -z "$noop" ]]
             then
+                echo "full send $i"
                 btrfs send "${LOCAL_SNAPSHOT_MOUNT}/$i" |
                     btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
                 if [ $? != 0 ]; then
                     echo "An error occurred. Halting."
                     exit 1
                 fi
+            else
+                echo "dry run full send $i"
             fi
         fi
         parent=$i
@@ -258,13 +268,13 @@ backup_snapshots(){
     num_of_intern_snaps=$(num_of_snaps "$all_intern_snaps")
     echo "there are $num_of_intern_snaps snapshots of $config"
     [ "$num_of_intern_snaps" == 0 ] && 
-        echo "skipping $config" && continue
+        echo "skipping $config" && return 0
     # get a list of snapshots that don't exist on intern yet
     # get a list of snapshots that exist on both
     only_intern=$(only_in_a "$all_intern_snaps" "$all_extern_snaps")
     num_only_intern=$(num_of_snaps "$only_intern")
     [ "$num_only_intern" == 0 ] &&
-        echo "none to send for $config" && continue
+        echo "none to send for $config" && return 0
     intern_and_extern=$(a_and_b "$all_intern_snaps" "$all_extern_snaps")
     echo "need to send over $num_only_intern"
     send "$only_intern" "$intern_and_extern" || exit 1
@@ -272,7 +282,7 @@ backup_snapshots(){
 }
 
 attempt_extern_backup() {
-    [[ "$backup" == "false" ]] && return 0
+    [[ "$dontbackup" == "true" ]] && return 0
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
     then
         if test_running_send
@@ -280,9 +290,8 @@ attempt_extern_backup() {
             echo "Backup already in progress"
         else
             echo "attempting to backup to external disk"
-            # backup_snapshots "$SUBVOLUME" 
             backup_snapshots $config
-            #prune "${EXTERN_SNAPSHOT_MOUNT}"
+            prune "${EXTERN_SNAPSHOT_MOUNT}"
         fi
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
@@ -349,14 +358,22 @@ do
     case "$1" in
         -b|--backup-only)   backup="true";shift;;
         -n|--dry-run)       noop="true";shift;;
-        -d|--dont-backup)   backup="false";shift;;
+        -d|--dont-backup)   dontbackup="true";shift;;
         -h|--help)          usage;exit 0;;
         *)                  break;;
     esac
 done
 
+# validate command line
+
+if [[ "$backup" == "true" ]] && [[ "$dontbackup" == "true" ]]
+then
+    echo "Options --backup-only and --dont-backup are mutually exclusive"
+    usage
+    exit 1
+fi
+
 for config in $(get_config list); do
-    echo "Snapshotting $config"
     LOCAL_SNAPSHOT_MOUNT=$(get_config LocalSnapshots $config) || exit 1
     EXTERN_SNAPSHOT_MOUNT=$(get_config RemoteSnapshots $config) || exit 1 
     SUBVOLUME=$(get_config SubvolumeRoot $config) || exit 1
@@ -369,4 +386,3 @@ for config in $(get_config list); do
         attempt_extern_backup
     fi
 done
-
