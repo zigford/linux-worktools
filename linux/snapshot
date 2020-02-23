@@ -281,6 +281,68 @@ backup_snapshots(){
     prune_but_keep_some "$all_intern_snaps" || exit 1
 }
 
+cleanup_old_snaps() {
+    echo "need to recover $1 bytes"
+    tmpfilea=/tmp/$RANDOM
+    while test -f $tmpfilea
+    do
+        tmpfilea=/tmp/$RANDOM
+    done
+    tmpfileb=/tmp/$RANDOM
+    while test -f $tmpfileb
+    do
+        tmpfileb=/tmp/$RANDOM
+    done
+    tmpfilec=/tmp/$RANDOM
+    while test -f $tmpfilec
+    do
+        tmpfilec=/tmp/$RANDOM
+    done
+    btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
+    {
+        sub(/[0-9]\//,"",$1)
+        if (NR>3) print
+    }' | sort -n -k1 > $tmpfilea
+    btrfs subvol list "${EXTERN_SNAPSHOT_MOUNT}" | awk '
+    {
+        for (i=2;i<=NF;i++){printf "%s ", $i}
+        printf "\n"
+    }' | sort -n -k1 > $tmpfileb
+
+    join $tmpfilea $tmpfileb > $tmpfilec
+    rm $tmpfilea $tmpfileb
+    bytes_can_salvage=0
+    snaps_to_del=$(awk -v bytes_to_recover=$1 '
+    {
+        if (bytes_salvaged < bytes_to_recover) {
+        } else {
+            bytes_salvaged+=$3
+        }
+    }END{print NR}' $tmpfilec)
+    echo "need to delete the oldest $snaps_to_del snapshots"
+    rm $tmpfilec
+}
+
+check_freeup_space() {
+    percent_to_keep_free=10
+    # check if we are under the threshold
+    # if we aren't, calc the exclusive size
+    # of snapshots from oldest to newest
+    # until we know how many we need to delete.
+    size=$(df -P "${EXTERN_SNAPSHOT_MOUNT}"|awk '{if(NR==2)print $2*1024}')
+    used=$(btrfs fi df -b "${EXTERN_SNAPSHOT_MOUNT}"|awk -F'=' '{if(NR==1)print$3}')
+    free_percent=$(echo "scale=4;100-(($used/$size)*100)"|bc|sed 's/\..*//')
+    free_desired=$(echo "scale=4;($size/100)*$percent_to_keep_free")
+    if [ $free_percent -lt $percent_to_keep_free ]
+    then
+        # return how many bytes needed to free up
+        echo "scale=4;$free_desired-($size-$used)"|bc|sed 's/\..*//'
+    else
+        # return 0
+        echo 0
+    fi
+}
+
 attempt_extern_backup() {
     [[ "$dontbackup" == "true" ]] && return 0
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
@@ -292,6 +354,11 @@ attempt_extern_backup() {
             echo "attempting to backup to external disk"
             backup_snapshots $config
             prune "${EXTERN_SNAPSHOT_MOUNT}"
+            free_space_needed=$(check_freeup_space)
+            if [ "$free_space_needed" -ne 0 ]
+            then
+                cleanup_old_snaps $free_space_needed
+            fi
         fi
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
@@ -360,7 +427,7 @@ do
         -n|--dry-run)       noop="true";shift;;
         -d|--dont-backup)   dontbackup="true";shift;;
         -h|--help)          usage;exit 0;;
-        *)                  break;;
+        *)                  usage;exit 1;;
     esac
 done
 
@@ -368,8 +435,8 @@ done
 
 if [[ "$backup" == "true" ]] && [[ "$dontbackup" == "true" ]]
 then
-    echo "Options --backup-only and --dont-backup are mutually exclusive"
-    usage
+    echo "snapshot: option --backup-only and --dont-backup are mutually exclusive"
+    echo "Try 'snapshot --help' for more information"
     exit 1
 fi
 
