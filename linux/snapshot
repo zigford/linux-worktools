@@ -307,10 +307,10 @@ cleanup_old_snaps() {
 	    if (a=="") {a=NR}
         }
     }END{print a}' $tmpfile)
-    rm $tmpfile
     echo "need to delete the oldest $snaps_to_del snapshots"
     awk -v snaps_to_del=$snaps_to_del 'NR<=snaps_to_del{print $NF}' \
 	    $tmpfile | remove_snapshots "${EXTERN_SNAPSHOT_MOUNT}"
+    rm $tmpfile
 }
 
 hbytes() {
