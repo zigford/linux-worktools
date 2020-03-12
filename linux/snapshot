@@ -281,46 +281,73 @@ backup_snapshots(){
     prune_but_keep_some "$all_intern_snaps" || exit 1
 }
 
-cleanup_old_snaps() {
-    echo "need to recover $1 bytes"
-    tmpfilea=/tmp/$RANDOM
-    while test -f $tmpfilea
-    do
-        tmpfilea=/tmp/$RANDOM
-    done
-    tmpfileb=/tmp/$RANDOM
-    while test -f $tmpfileb
-    do
-        tmpfileb=/tmp/$RANDOM
-    done
-    tmpfilec=/tmp/$RANDOM
-    while test -f $tmpfilec
-    do
-        tmpfilec=/tmp/$RANDOM
-    done
+list_qgroups() {
+    path=$1
+    # try list qgroups once to test if
+    if ! btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    then
+    	btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+	btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    fi
     btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
     {
         sub(/[0-9]\//,"",$1)
         if (NR>3) print
-    }' | sort -n -k1 > $tmpfilea
+    }' | sort
+
+}
+
+list_subvols() {
     btrfs subvol list "${EXTERN_SNAPSHOT_MOUNT}" | awk '
     {
         for (i=2;i<=NF;i++){printf "%s ", $i}
         printf "\n"
-    }' | sort -n -k1 > $tmpfileb
+    }' | sort
+}
 
-    join $tmpfilea $tmpfileb > $tmpfilec
-    rm $tmpfilea $tmpfileb
+cleanup_old_snaps() {
+    echo "need to recover $(hbytes $1)"
+
+    tmpfile=/tmp/$RANDOM
+    while test -f $tmpfile
+    do
+        tmpfile=/tmp/$RANDOM
+    done
+    join <(list_qgroups) <(list_subvols) > $tmpfile
     bytes_can_salvage=0
     snaps_to_del=$(awk -v bytes_to_recover=$1 '
     {
         if (bytes_salvaged < bytes_to_recover) {
-        } else {
             bytes_salvaged+=$3
+        } else {
+	    if (a=="") {a=NR}
         }
-    }END{print NR}' $tmpfilec)
+    }END{print a}' $tmpfile)
+    rm $tmpfile
     echo "need to delete the oldest $snaps_to_del snapshots"
-    rm $tmpfilec
+    awk -v snaps_to_del=$snaps_to_del 'NR<=snaps_to_del{print $NF}' \
+	    $tmpfile | remove_snapshots "${EXTERN_SNAPSHOT_MOUNT}"
+}
+
+hbytes() {
+    # convert bytes to human readable
+    bytes="$1"
+    a_kbyte=1024
+    a_mbyte=$((a_kbyte * 1000))
+    a_gbyte=$((a_mbyte * 1000))
+    a_tbyte=$((a_gbyte * 1000))
+    if [ "$bytes" -lt "$a_kbyte" ]; then
+    	printf "$bytes bytes"
+    elif [ "$bytes" -lt "$a_mbyte" ]; then
+    	printf "%d kbytes" $((bytes / 1024))
+    elif [ "$bytes" -lt "$a_gbyte" ]; then
+    	printf "%d mbytes" $((bytes / 1024 / 1024))
+    elif [ "$bytes" -lt "$a_tbyte" ]; then
+        printf "%d gbytes" $((bytes / 1024 / 1024 / 1024))
+    else
+        printf "%d bytes" $bytes
+    fi
+
 }
 
 check_freeup_space() {
