@@ -7,6 +7,7 @@ import argparse
 import pathlib
 import configparser
 import os
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("hostname", help="hostname to connect to")
@@ -55,7 +56,14 @@ else:
         user = config[args.username]
 
 username = user['domain'] + '\\' + user['username']
-pw = user['password']
+cmdargs = ["op", "get", "item", user['username']]
+pwproc = subprocess.Popen(cmdargs, stdout=subprocess.PIPE)
+pwout = pwproc.stdout.read()
+pwjson = json.loads(pwout)
+
+for field in pwjson['details']['sections'][0]['fields']:
+    if field['n'] == 'password':
+        pw = field['v']
 
 if args.vmname:
     vmpath = pathlib.Path("/home/harrisj/.ts/{}/{}".format(hostname,
