@@ -1,0 +1,12 @@
+---
+- hosts: localhost
+  gather_facts: no
+  tasks:
+    - include_tasks: tasks/set_terminal.yml
+      vars:
+        font: Terminus Medium 10
+        row_size: "30"
+    - include_tasks: tasks/setup_vim.yml
+    - include_tasks: tasks/set_focus.yml
+    - include_tasks: tasks/1pass.yml
+      # configure_firefox.yml set about_blank as home

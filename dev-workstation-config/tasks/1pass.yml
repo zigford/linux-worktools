@@ -1,0 +1,19 @@
+---
+- name: Check 1Password CLI is installed.
+  stat:
+    path: /usr/local/bin/op
+  register: op
+
+- name: Download 1Password CLI
+  get_url:
+    dest: /tmp/op.zip
+    url: "https://cache.agilebits.com/dist/1P/op\
+          /pkg/v1.1.0/op_linux_amd64_v1.1.0.zip"
+  when: op.stat.exists == false
+
+- name: Install 1Password CLI.
+  unarchive:
+    src: /tmp/op.zip
+    dest: /usr/local/bin
+  become: yes
+  when: op.stat.exists == false

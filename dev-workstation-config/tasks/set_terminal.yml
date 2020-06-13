@@ -1,0 +1,61 @@
+---
+- name: Get gnome-terminal default profile.
+  shell:
+    gsettings get org.gnome.Terminal.ProfilesList default | tr -d "'"
+  changed_when: false
+  register: gnome_terminal_profile
+
+- name: Check if xos4 terminus font is set.
+  command:
+    cmd:
+      "gsettings get \"org.gnome.Terminal.Legacy.Profile:\
+       /org/gnome/terminal/legacy/profiles:\
+       /:{{ gnome_terminal_profile.stdout | trim }}/\" font"
+  register: current_font
+  changed_when: false
+
+- name: Set gnome-terminal font.
+  command:
+    cmd:
+      "gsettings set \
+      \"org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/\
+      legacy/profiles:/:{{ gnome_terminal_profile.stdout | trim }}/\" \
+      font '\"{{ font }}\"'"
+  when: current_font.stdout.find(font) == -1
+
+- name: Check if use-system-font is set.
+  command:
+    cmd:
+      "gsettings get \"org.gnome.Terminal.Legacy.Profile:\
+       /org/gnome/terminal/legacy/profiles:\
+       /:{{ gnome_terminal_profile.stdout | trim }}/\" use-system-font"
+  register: system_font
+  changed_when: false
+
+- name: Set use system font to false.
+  command:
+    cmd:
+      "gsettings set \
+      \"org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/\
+      legacy/profiles:/:{{ gnome_terminal_profile.stdout | trim }}/\" \
+      use-system-font false"
+  when: system_font.stdout == 'true'
+
+- name: Check initial row size setting.
+  command:
+    cmd:
+      "gsettings get \"org.gnome.Terminal.Legacy.Profile:\
+       /org/gnome/terminal/legacy/profiles:\
+       /:{{ gnome_terminal_profile.stdout | trim }}/\" default-size-rows"
+  register: current_row_size
+  changed_when: false
+
+- name: Set gnome-terminal default row size.
+  command:
+    cmd:
+      "gsettings set \
+       \"org.gnome.Terminal.Legacy.Profile:\/org/gnome/terminal/\
+       legacy/profiles:/:{{ gnome_terminal_profile.stdout | trim }}/\" \
+       default-size-rows {{ row_size }}"
+  when: current_row_size.stdout != row_size
+  register: set_row_size
