@@ -10,3 +10,5 @@
     - include_tasks: tasks/set_focus.yml
     - include_tasks: tasks/1pass.yml
       # configure_firefox.yml set about_blank as home
+    # - include_tasks: tasks/bash_profile.yml
+    - include_tasks: tasks/setup_firefox.yml
