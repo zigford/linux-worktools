@@ -17,3 +17,9 @@
     dest: /usr/local/bin
   become: yes
   when: op.stat.exists == false
+
+- name: Install 1Password Config file.
+  copy:
+    content: "{{ op_secret_key }}"
+    dest: ~/.op/config
+    mode: 0600

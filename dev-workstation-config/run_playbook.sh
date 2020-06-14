@@ -3,4 +3,4 @@
 ANSIBLE_ROLES_PATH=~/.ansible/roles
 
 ansible-galaxy install -r requirements.yml
-ansible-playbook main.yml
+ansible-playbook main.yml --ask-vault-pass

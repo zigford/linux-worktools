@@ -1,6 +1,7 @@
 ---
 - hosts: localhost
   gather_facts: no
+  vars_files: vars/secrets.yml
   vars:
     firefox_profiles:
       harrisj:
@@ -20,6 +21,5 @@
     - include_tasks: tasks/setup_vim.yml
     - include_tasks: tasks/set_focus.yml
     - include_tasks: tasks/1pass.yml
-      # configure_firefox.yml set about_blank as home
-    # - include_tasks: tasks/bash_profile.yml
-    - include_tasks: tasks/setup_firefox.yml
+    - include_tasks: tasks/bash_profile.yml
+    #- include_tasks: tasks/setup_firefox.yml
