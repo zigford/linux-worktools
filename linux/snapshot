@@ -6,19 +6,7 @@ set -o pipefail
 _24hrs=86400
 _30days=2592000
 _1year=$((365 * 24 * 60 * 60))
-
-config_var(){
-    # CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
-    # CONF_FILE="${CONFIG}/snapshots/snapshots.conf"
-    CONF_FILE="/etc/snapshots.conf"
-    if [[ -f "${CONF_FILE}" ]]
-    then
-        cat "${CONF_FILE}"|awk -v var="$1" -F= '{if ($0 ~ var) print$2}'
-    else
-        echo "Could not find config file" 1>&2
-        exit 1
-    fi
-}
+CONF_FILE="/etc/snapshots.conf"
 
 mountvol() {
     if ! mount | grep -q "$1"
@@ -33,24 +21,20 @@ fdate() {
 
 snapls() {
     cd "${2}"
-    find . -maxdepth 1 -type d -maxdepth 1 \
+    find . -maxdepth 1 -type d \
         -name "${1}*" -printf '%f\n'
 }
 
 snapshot() {
-    while IFS= read -r snapname
-    do
-        snapname=${snapname#@}
-        if [ "root" == "${snapname}" ]
-        then snaproot="/"
-        else snaproot="/${snapname}"
-        fi
-        snapdest="${1}"
-        [[ ! -d "${snapdest}" ]] && mkdir "${snapdest}"
+    [[ ! -d "${LOCAL_SNAPSHOT_MOUNT}" ]] && mkdir "${LOCAL_SNAPSHOT_MOUNT}"
+    if [[ -z "$noop" ]]
+    then
         btrfs subv snapshot -r \
-            "${snaproot}" \
-            "${snapdest}/${snapname}-$(fdate)"
-    done
+            "${SUBVOLUME}" \
+            "${LOCAL_SNAPSHOT_MOUNT}/${config}-$(fdate)"
+    else
+        echo "dry run snapshot ${SUBVOLUME}"
+    fi
 }
 
 is_snapshot_in_24_hrs() {
@@ -145,8 +129,12 @@ remove_snapshots() {
     ROOT=$1
     while IFS= read -r snapshot
     do
-        echo "Removing ${ROOT}/$snapshot"
-        btrfs subvol delete "${ROOT}/$snapshot"
+        if [[ -z "$noop" ]]
+        then
+            btrfs subvol delete "${ROOT}/$snapshot"
+        else
+            echo "dry run removing ${ROOT}/$snapshot"
+        fi
     done
 }
 
@@ -163,18 +151,18 @@ prune() {
     # step 6. build list of number of snapshots needed to delete to meet threshold
     # step 7. delete list of snapshots
     # step 6. delete oldest to
-    ROOT="${1}"
-    while IFS= read -r vol
-    do
-        vol="${vol#@}"
-        snaps_to_keep=$(get_keep_snapshots "$vol" $ROOT)
-        prune_list="$(invert_list "$snaps_to_keep" "$vol" "$ROOT")"
-        num_to_prune=$(num_of_snaps "$prune_list")
-        [ "$num_to_prune" -eq 0 ] && continue
-        echo "keep $(num_of_snaps $snaps_to_keep) $vol snaps on $ROOT"
-        echo "prune $num_to_prune $vol snaps on $ROOT"
-        echo "$prune_list" | remove_snapshots "$ROOT"
-    done
+    ROOT="$1"
+    snaps_to_keep=$(get_keep_snapshots "$config" $ROOT)
+    prune_list="$(invert_list "$snaps_to_keep" "$config" "$ROOT")"
+    # We never want to prune indiscriminately as we could accidentally remove
+    # the last remaining snapshot in common with backup drive. Then we would
+    # be forced to do a full backup often and this is not needed on btrfs.
+    prune_list=$(echo "$prune_list"|tail -n +3) 
+    num_to_prune=$(num_of_snaps "$prune_list")
+    [ "$num_to_prune" -eq 0 ] && return
+    echo "keep $(num_of_snaps "$snaps_to_keep") $config snaps on $ROOT"
+    echo "prune $num_to_prune $config snaps on $ROOT"
+    echo "$prune_list" | remove_snapshots "$ROOT"
 }
 
 num_of_snaps(){
@@ -185,32 +173,34 @@ only_in_a(){
     IFS=$'\n'
     a=$1
     b=$2
-    for i in $a; {
+    for i in $a
+    do
         in_b=false
-        for j in $b; {
+        for j in $b
+        do
             if [[ "$i" == "$j" ]]; then
-                #echo "Ahah! $i is equal to $j"
                 in_b=true
             fi
-        }
+        done
         if ! $in_b; then echo $i; fi
-    }
+    done
 }
 
 a_and_b(){
     IFS=$'\n'
     a=$1
     b=$2
-    for i in $a; {
+    for i in $a
+    do
         in_b=false
-        for j in $b; {
+        for j in $b
+        do
             if [[ "$i" == "$j" ]]; then
-                #echo "Ahah! $i is equal to $j"
                 in_b=true
             fi
-        }
+        done
         if $in_b; then echo $i; fi
-    }
+    done
 }
 
 send(){
@@ -221,38 +211,34 @@ send(){
     for i in $list_to_backup; do
         if [[ -n $parent ]]
         then
-            echo "backup $i with parent $parent"
-            btrfs send -p "${LOCAL_SNAPSHOT_MOUNT}/$parent" \
-                "${LOCAL_SNAPSHOT_MOUNT}/$i" |
-                btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
-            if [ $? != 0 ]; then
-                echo "An error occurred. Halting."
-                exit 1
+            if [[ -z "$noop" ]]
+            then
+                echo "backup $i with parent $parent"
+                btrfs send -p "${LOCAL_SNAPSHOT_MOUNT}/$parent" \
+                    "${LOCAL_SNAPSHOT_MOUNT}/$i" |
+                    btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
+                if [ $? != 0 ]; then
+                    echo "An error occurred. Halting."
+                    exit 1
+                fi
+            else
+                echo "dry run send $i with parent $parent"
             fi
         else
-            echo "full backup $i"
-            btrfs send "${LOCAL_SNAPSHOT_MOUNT}/$i" |
-                btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
-            if [ $? != 0 ]; then
-                echo "An error occurred. Halting."
-                exit 1
+            if [[ -z "$noop" ]]
+            then
+                echo "full send $i"
+                btrfs send "${LOCAL_SNAPSHOT_MOUNT}/$i" |
+                    btrfs receive "${EXTERN_SNAPSHOT_MOUNT}"
+                if [ $? != 0 ]; then
+                    echo "An error occurred. Halting."
+                    exit 1
+                fi
+            else
+                echo "dry run full send $i"
             fi
         fi
         parent=$i
-    done
-}
-
-prune_but_keep_some(){
-    IFS=$'\n'
-    list=$1
-    new_list=$(echo "$list"|head -n -2)
-    for i in $new_list; do
-        echo "removing $i"
-        btrfs subvol delete "${LOCAL_SNAPSHOT_MOUNT}/$i"
-        if [ $? != 0 ]; then
-            echo "An error occurred. Halting"
-            exit 1
-        fi
     done
 }
 
@@ -263,35 +249,132 @@ backup_snapshots(){
     #    sequence is.
     # 4. Foreach one, send it across and once it is send
     #    delete it locally except the last one.
-    while IFS= read -r vol
-    do
-        vol="${vol#@}"
-        all_extern_snaps=$(snapls "${vol}" "${EXTERN_SNAPSHOT_MOUNT}")
-        all_intern_snaps=$(snapls "${vol}" "${LOCAL_SNAPSHOT_MOUNT}")
-        num_of_extern_snaps=$(num_of_snaps "$all_extern_snaps")
-        num_of_intern_snaps=$(num_of_snaps "$all_intern_snaps")
-        echo "there are $num_of_intern_snaps snapshots of $vol"
-        [ "$num_of_intern_snaps" == 0 ] && 
-            echo "skipping $vol" && continue
-        # get a list of snapshots that don't exist on intern yet
-        # get a list of snapshots that exist on both
-        only_intern=$(only_in_a "$all_intern_snaps" "$all_extern_snaps")
-        num_only_intern=$(num_of_snaps "$only_intern")
-        [ "$num_only_intern" == 0 ] &&
-            echo "none to send for $vol" && continue
-        intern_and_extern=$(a_and_b "$all_intern_snaps" "$all_extern_snaps")
-        echo "need to send over $num_only_intern"
-        send "$only_intern" "$intern_and_extern" || exit 1
-        prune_but_keep_some "$all_intern_snaps" || exit 1
-    done
+    all_extern_snaps=$(snapls "${config}" "${EXTERN_SNAPSHOT_MOUNT}")
+    all_intern_snaps=$(snapls "${config}" "${LOCAL_SNAPSHOT_MOUNT}")
+    num_of_extern_snaps=$(num_of_snaps "$all_extern_snaps")
+    num_of_intern_snaps=$(num_of_snaps "$all_intern_snaps")
+    echo "there are $num_of_intern_snaps snapshots of $config"
+    [ "$num_of_intern_snaps" == 0 ] && 
+        echo "skipping $config" && return 0
+    # get a list of snapshots that don't exist on intern yet
+    # get a list of snapshots that exist on both
+    only_intern=$(only_in_a "$all_intern_snaps" "$all_extern_snaps")
+    num_only_intern=$(num_of_snaps "$only_intern")
+    [ "$num_only_intern" == 0 ] &&
+        echo "none to send for $config" && return 0
+    intern_and_extern=$(a_and_b "$all_intern_snaps" "$all_extern_snaps")
+    echo "need to send over $num_only_intern"
+    send "$only_intern" "$intern_and_extern" || exit 1
+    echo "$all_intern_snaps" | head -n -2 |
+        remove_snapshots "${LOCAL_SNAPSHOT_MOUNT}" || exit 1
 }
 
-attempt_extern_backup(){
+list_qgroups() {
+    path=$1
+    # try list qgroups once to test if
+    if ! btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    then
+    	btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+	btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    fi
+    btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
+    {
+        sub(/[0-9]\//,"",$1)
+        if (NR>3) print
+    }' | sort
+
+}
+
+list_subvols() {
+    btrfs subvol list "${EXTERN_SNAPSHOT_MOUNT}" | awk '
+    {
+        for (i=2;i<=NF;i++){printf "%s ", $i}
+        printf "\n"
+    }' | sort
+}
+
+cleanup_old_snaps() {
+    echo "need to recover $(hbytes $1)"
+
+    tmpfile=/tmp/$RANDOM
+    while test -f $tmpfile
+    do
+        tmpfile=/tmp/$RANDOM
+    done
+    join <(list_qgroups) <(list_subvols) > $tmpfile
+    bytes_can_salvage=0
+    snaps_to_del=$(awk -v bytes_to_recover=$1 '
+    {
+        if (bytes_salvaged < bytes_to_recover) {
+            bytes_salvaged+=$3
+        } else {
+	    if (a=="") {a=NR}
+        }
+    }END{print a}' $tmpfile)
+    echo "need to delete the oldest $snaps_to_del snapshots"
+    awk -v snaps_to_del=$snaps_to_del 'NR<=snaps_to_del{print $NF}' \
+	    $tmpfile | remove_snapshots "${EXTERN_SNAPSHOT_MOUNT}"
+    rm $tmpfile
+}
+
+hbytes() {
+    # convert bytes to human readable
+    bytes="$1"
+    a_kbyte=1024
+    a_mbyte=$((a_kbyte * 1000))
+    a_gbyte=$((a_mbyte * 1000))
+    a_tbyte=$((a_gbyte * 1000))
+    if [ "$bytes" -lt "$a_kbyte" ]; then
+    	printf "$bytes bytes"
+    elif [ "$bytes" -lt "$a_mbyte" ]; then
+    	printf "%d kbytes" $((bytes / 1024))
+    elif [ "$bytes" -lt "$a_gbyte" ]; then
+    	printf "%d mbytes" $((bytes / 1024 / 1024))
+    elif [ "$bytes" -lt "$a_tbyte" ]; then
+        printf "%d gbytes" $((bytes / 1024 / 1024 / 1024))
+    else
+        printf "%d bytes" $bytes
+    fi
+
+}
+
+check_freeup_space() {
+    percent_to_keep_free=10
+    # check if we are under the threshold
+    # if we aren't, calc the exclusive size
+    # of snapshots from oldest to newest
+    # until we know how many we need to delete.
+    size=$(df -P "${EXTERN_SNAPSHOT_MOUNT}"|awk '{if(NR==2)print $2*1024}')
+    used=$(btrfs fi df -b "${EXTERN_SNAPSHOT_MOUNT}"|awk -F'=' '{if(NR==1)print$3}')
+    free_percent=$(echo "scale=4;100-(($used/$size)*100)"|bc|sed 's/\..*//')
+    free_desired=$(echo "scale=4;($size/100)*$percent_to_keep_free")
+    if [ $free_percent -lt $percent_to_keep_free ]
+    then
+        # return how many bytes needed to free up
+        echo "scale=4;$free_desired-($size-$used)"|bc|sed 's/\..*//'
+    else
+        # return 0
+        echo 0
+    fi
+}
+
+attempt_extern_backup() {
+    [[ "$dontbackup" == "true" ]] && return 0
     if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
     then
-        echo "attempting to backup to external disk"
-        echo "$SUBVOLUMES" | backup_snapshots
-        echo "$SUBVOLUMES" | prune "${EXTERN_SNAPSHOT_MOUNT}"
+        if test_running_send
+        then
+            echo "Backup already in progress"
+        else
+            echo "attempting to backup to external disk"
+            backup_snapshots $config
+            prune "${EXTERN_SNAPSHOT_MOUNT}"
+            free_space_needed=$(check_freeup_space)
+            if [ "$free_space_needed" -ne 0 ]
+            then
+                cleanup_old_snaps $free_space_needed
+            fi
+        fi
     else
         echo "${EXTERN_SNAPSHOT_MOUNT} not mounted"
     fi
@@ -314,28 +397,74 @@ test_running_send(){
     fi
 }
 
-# get volumes to snapshot
-VOLUMES_ROOT_MOUNT=$(config_var "BtrfsRoot") || exit 1
-LOCAL_SNAPSHOT_MOUNT=$(config_var "LocalSnapshots") || exit 1
-EXTERN_SNAPSHOT_MOUNT=$(config_var "RemoteSnapshots") || exit 1 
-SUBVOLUMES=$(ls "${VOLUMES_ROOT_MOUNT}" | grep -v "${LOCAL_SNAPSHOT_MOUNT##*/}")
+get_config() {
+    case "$1" in
+        "count")
+            awk '/\[.*\]/ {a=a+1}END{print a}' $CONF_FILE
+            ;;
+        "list")
+            awk -F'\\[|\\]' '/\[.*\]/ {print $2}' $CONF_FILE
+            ;;
+        *)
+            [[ -z "$2" ]] &&
+                echo "specify config and setting" && exit 1
+            awk -F"=" -v s="$1" -v c="$2" '{
+                if ($0 ~ /\[.*\]/) { 
+                    if ($0 ~ c) {
+                        in_s = 1
+                    } else {
+                        in_s = 0
+                    }
+                } else {
+                    if (in_s) {
+                        if ($0 ~ s) {
+                            print $2
+                        }
+                }
+                }
+            }' $CONF_FILE
+            ;;
+    esac
 
+}
 
-if [[ "$1" == "-b" ]]
+usage() {
+    echo -e "Usage: $0 [OPTION]...\n"
+    echo "-b, --backup-only         backup snapshots"
+    echo "-d, --dont-backup         take snapshots only"
+    echo "-n, --dry-run             output what would be done"
+}
+
+while test $# -gt 0
+do
+    case "$1" in
+        -b|--backup-only)   backup="true";shift;;
+        -n|--dry-run)       noop="true";shift;;
+        -d|--dont-backup)   dontbackup="true";shift;;
+        -h|--help)          usage;exit 0;;
+        *)                  usage;exit 1;;
+    esac
+done
+
+# validate command line
+
+if [[ "$backup" == "true" ]] && [[ "$dontbackup" == "true" ]]
 then
-    if [[ test_running_send ]]
-    then
-        echo "Backup already in progress"
-    else
-        attempt_extern_backup
-    fi
-else
-    echo "$SUBVOLUMES" | snapshot "${LOCAL_SNAPSHOT_MOUNT}"
-    echo "$SUBVOLUMES" | prune "${LOCAL_SNAPSHOT_MOUNT}"
-    if [[ test_running_send ]]
-    then
-        echo "Backup already in progress"
-    else
-        attempt_extern_backup
-    fi
+    echo "snapshot: option --backup-only and --dont-backup are mutually exclusive"
+    echo "Try 'snapshot --help' for more information"
+    exit 1
 fi
+
+for config in $(get_config list); do
+    LOCAL_SNAPSHOT_MOUNT=$(get_config LocalSnapshots $config) || exit 1
+    EXTERN_SNAPSHOT_MOUNT=$(get_config RemoteSnapshots $config) || exit 1 
+    SUBVOLUME=$(get_config SubvolumeRoot $config) || exit 1
+    if [[ "$backup" == "true" ]]
+    then
+        attempt_extern_backup
+    else
+        snapshot
+        prune "${LOCAL_SNAPSHOT_MOUNT}"
+        attempt_extern_backup
+    fi
+done
