@@ -66,13 +66,15 @@ else:
         user = config[args.username]
 
 username = user['domain'] + '\\' + user['username']
-print("user: " + user['username'])
-print("backend: " + backend)
 if backend == 'gpg':
     gpg = gnupg.GPG(gnupghome=str(home.joinpath('.gnupg')))
     passstorepath = home.joinpath('.password-store/work')
-    passfiledomainpath = passstorepath.joinpath(user['domain'])
-    passfilepath = passfiledomainpath.joinpath(user['username'])
+    if user['domain'] == '':
+        passfiledomainpath = passstorepath.joinpath('ts')
+        passfilepath = passfiledomainpath.joinpath(user.name)
+    else:
+        passfiledomainpath = passstorepath.joinpath(user['domain'])
+        passfilepath = passfiledomainpath.joinpath(user['username'])
     passfile = open(str(passfilepath) + '.gpg', "rb")
     pw = str(gpg.decrypt_file(passfile)).partition('\n')[0]
 elif backend == '1password':
