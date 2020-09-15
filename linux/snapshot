@@ -154,16 +154,10 @@ prune() {
     ROOT="$1"
     snaps_to_keep=$(get_keep_snapshots "$config" $ROOT)
     prune_list="$(invert_list "$snaps_to_keep" "$config" "$ROOT")"
-    if [ "$ROOT" == "$LOCAL_SNAPSHOT_MOUNT" ]
-    then
-        # We never want to prunt local snapshot mount
-        # indiscriminately as we could accidentally remove
-        # the last remaining snapshot in common with the
-        # backup drive. Then we would be forced to do a
-        # full backup often and this is not needed on
-        # btrfs.
-        prune_list=$(echo "$prune_list"|tail -n +3) 
-    fi
+    # We never want to prune indiscriminately as we could accidentally remove
+    # the last remaining snapshot in common with backup drive. Then we would
+    # be forced to do a full backup often and this is not needed on btrfs.
+    prune_list=$(echo "$prune_list"|tail -n +3) 
     num_to_prune=$(num_of_snaps "$prune_list")
     [ "$num_to_prune" -eq 0 ] && return
     echo "keep $(num_of_snaps "$snaps_to_keep") $config snaps on $ROOT"
