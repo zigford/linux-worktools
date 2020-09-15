@@ -272,10 +272,12 @@ backup_snapshots(){
 list_qgroups() {
     path=$1
     # try list qgroups once to test if
-    if ! btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    if ! qg=$(btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" 2>&1 > /dev/null) ||
+        [ "${qg%%:*}" == "WARNING" ]
     then
-    	btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
-	btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+        echo "scanning btrfs quotas..."
+        btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+        btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
     fi
     btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
     {
