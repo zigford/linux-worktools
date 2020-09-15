@@ -5,6 +5,7 @@ set -o pipefail
 # constants
 _24hrs=86400
 _30days=2592000
+_7days=604800
 _1year=$((365 * 24 * 60 * 60))
 CONF_FILE="/etc/snapshots.conf"
 
@@ -63,6 +64,30 @@ monthly_in_last_year() {
             then
                 continue
             fi
+        fi
+    done <<<$(snapls $1 $2)
+}
+
+daily_in_last_week() {
+    # Todo - switch awk to param expansion
+    while IFS= read -r snapshotname
+    do
+        snapshotdate=$(echo "$snapshotname" | awk -F'-' '{print $2"-"$3"-"$4" "$5}')
+        snapshotdate=$(date --date="$snapshotdate" +"%s")
+        now=$(date +"%s")
+        day=$(echo "$snapshotname" | awk -F'-' '{print $4}')
+        if [[ $((now - snapshotdate)) -lt $_7days ]] &&
+           [[ $((now - snapshotdate)) -gt $_24hrs  ]]
+        then
+            if [[ -z $lastday ]] || [[ "$lastday" != "$day" ]]
+            then
+                echo "$snapshotname"
+                lastday=$day
+            elif [[ "$lastday" == "$day" ]]
+            then
+                continue
+            fi
+
         fi
     done <<<$(snapls $1 $2)
 }
