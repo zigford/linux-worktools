@@ -22,7 +22,7 @@ fdate() {
 snapls() {
     cd "${2}"
     find . -maxdepth 1 -type d \
-        -name "${1}*" -printf '%f\n'
+        -name "${1}-????-??-??-??:??:??" -printf '%f\n'
 }
 
 snapshot() {
