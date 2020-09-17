@@ -29,6 +29,8 @@ parser.add_argument("-r", "--redirection",
                     help="Enable home drive redirection",
                     action="store_true")
 parser.add_argument("-p", "--password-backend", choices=['1password', 'tsini', 'gpg'])
+parser.add_argument("--snd",
+                    help="Pass sound devices", action="store_true")
 parser.add_argument("-d", "--debug", help="enable debug output", action="store_true")
 args = parser.parse_args()
 
@@ -112,6 +114,9 @@ cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", "/cert-ignore",
         "/u:{}".format(username), "/p:{}".format(pw),
         "/dynamic-resolution", "/title:{}".format(hostname),
         "/wm-class:ts"]
+if args.snd:
+    cmdargs.append("/sound")
+    cmdargs.append("/microphone")
 if args.console:
     cmdargs.append("/admin")
 if args.vmname:
