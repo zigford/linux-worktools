@@ -68,6 +68,7 @@ else:
         user = config[args.username]
 
 username = user['domain'] + '\\' + user['username']
+pw = None
 if backend == 'gpg':
     gpg = gnupg.GPG(gnupghome=str(home.joinpath('.gnupg')))
     passstorepath = home.joinpath('.password-store/work')
@@ -77,8 +78,11 @@ if backend == 'gpg':
     else:
         passfiledomainpath = passstorepath.joinpath(user['domain'])
         passfilepath = passfiledomainpath.joinpath(user['username'])
-    passfile = open(str(passfilepath) + '.gpg', "rb")
-    pw = str(gpg.decrypt_file(passfile)).partition('\n')[0]
+    try:
+        passfile = open(str(passfilepath) + '.gpg', "rb")
+        pw = str(gpg.decrypt_file(passfile)).partition('\n')[0]
+    except:
+        print("file not found in gpg store")
 elif backend == '1password':
     cmdargs = ["op", "get", "item", "--vault", "Personal", user['username']]
     pwproc = subprocess.Popen(cmdargs, stdout=subprocess.PIPE)
@@ -91,6 +95,8 @@ elif backend == '1password':
 else:
     pw = user['password']
 
+if pw == None:
+    pw = user['password']
 if pw == None:
     pw = getpass.getpass(prompt='Password: ')
 
