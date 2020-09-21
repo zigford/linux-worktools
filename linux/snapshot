@@ -5,6 +5,7 @@ set -o pipefail
 # constants
 _24hrs=86400
 _30days=2592000
+_7days=604800
 _1year=$((365 * 24 * 60 * 60))
 CONF_FILE="/etc/snapshots.conf"
 
@@ -22,7 +23,7 @@ fdate() {
 snapls() {
     cd "${2}"
     find . -maxdepth 1 -type d \
-        -name "${1}*" -printf '%f\n'
+        -name "${1}-????-??-??-??:??:??" -printf '%f\n'
 }
 
 snapshot() {
@@ -63,6 +64,30 @@ monthly_in_last_year() {
             then
                 continue
             fi
+        fi
+    done <<<$(snapls $1 $2)
+}
+
+daily_in_last_week() {
+    # Todo - switch awk to param expansion
+    while IFS= read -r snapshotname
+    do
+        snapshotdate=$(echo "$snapshotname" | awk -F'-' '{print $2"-"$3"-"$4" "$5}')
+        snapshotdate=$(date --date="$snapshotdate" +"%s")
+        now=$(date +"%s")
+        day=$(echo "$snapshotname" | awk -F'-' '{print $4}')
+        if [[ $((now - snapshotdate)) -lt $_7days ]] &&
+           [[ $((now - snapshotdate)) -gt $_24hrs  ]]
+        then
+            if [[ -z $lastday ]] || [[ "$lastday" != "$day" ]]
+            then
+                echo "$snapshotname"
+                lastday=$day
+            elif [[ "$lastday" == "$day" ]]
+            then
+                continue
+            fi
+
         fi
     done <<<$(snapls $1 $2)
 }
@@ -272,10 +297,12 @@ backup_snapshots(){
 list_qgroups() {
     path=$1
     # try list qgroups once to test if
-    if ! btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    if ! qg=$(btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" 2>&1 > /dev/null) ||
+        [ "${qg%%:*}" == "WARNING" ]
     then
-    	btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
-	btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+        echo "scanning btrfs quotas..."
+        btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+        btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
     fi
     btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
     {
@@ -360,7 +387,7 @@ check_freeup_space() {
 
 attempt_extern_backup() {
     [[ "$dontbackup" == "true" ]] && return 0
-    if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
+    if mount | grep -q "${EXTERN_SNAPSHOT_MOUNT%/}"
     then
         if test_running_send
         then
