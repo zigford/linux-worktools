@@ -387,7 +387,7 @@ check_freeup_space() {
 
 attempt_extern_backup() {
     [[ "$dontbackup" == "true" ]] && return 0
-    if [[ -d "${EXTERN_SNAPSHOT_MOUNT}" ]]
+    if mount | grep -q "${EXTERN_SNAPSHOT_MOUNT%/}"
     then
         if test_running_send
         then
