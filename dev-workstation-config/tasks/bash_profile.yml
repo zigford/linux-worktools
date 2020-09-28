@@ -1,0 +1,5 @@
+---
+- name: Ensure bash profile is installed.
+  copy:
+    src: files/bashrc
+    dest: ~/.bashrc

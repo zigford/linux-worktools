@@ -1,0 +1,11 @@
+---
+- name: Check if sloppy focus is enabled.
+  command:
+    cmd: gsettings get org.gnome.desktop.wm.preferences focus-mode
+  register: focus_mode
+  changed_when: false
+
+- name: Ensure focus mode is sloppy.
+  command:
+    cmd: gsettings set org.gnome.desktop.wm.preferences focus-mode 'sloppy'
+  when: focus_mode.stdout.find("sloppy") == -1

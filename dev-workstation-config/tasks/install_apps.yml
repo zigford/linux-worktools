@@ -1,0 +1,11 @@
+---
+- name: Ensure vim, git, fonts is installed.
+  package:
+    name:
+      - vim
+      - git
+      - terminus-fonts
+      - pass
+      - jq
+    state: present
+  become: yes

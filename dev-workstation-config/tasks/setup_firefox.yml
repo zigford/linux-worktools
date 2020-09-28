@@ -1,0 +1,13 @@
+---
+- name Get harrisj firefox profile name.
+  shell: |
+    cat ~/.mozilla/firefox.profiles.ini |
+    awk -F= '/harrisj/ && ! /Default/ {print $2}'|
+    tail -1
+  register: ff_profile
+  changed_when: false
+
+- name: Ensure harrisj profile default.
+  lineinfile:
+
+

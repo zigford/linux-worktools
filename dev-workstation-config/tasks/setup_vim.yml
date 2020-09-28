@@ -1,0 +1,11 @@
+---
+- name: Ensure my vim repo is cloned.
+  git:
+    repo: git@github.com:zigford/vim.git
+    dest: ~/src/zigford/vim
+    accept_hostkey: yes
+
+- name: Ensure vim config is installed.
+  command:
+    cmd: ~/src/zigford/vim/scripts/setupvim.sh
+    creates: ~/.vimrc

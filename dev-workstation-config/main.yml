@@ -1,0 +1,25 @@
+---
+- hosts: localhost
+  gather_facts: no
+  vars_files: vars/secrets.yml
+  vars:
+    firefox_profiles:
+      harrisj:
+        extensions:
+          - noscript
+        preferences:
+          browser.startup.homepage: "about:blank"
+          layers.geometry.opengl.enabled: "false"
+  roles:
+    - basvandenbrink.firefox
+
+  tasks:
+    - include_tasks: tasks/set_terminal.yml
+      vars:
+        font: Terminus Medium 10
+        row_size: "30"
+    - include_tasks: tasks/setup_vim.yml
+    - include_tasks: tasks/set_focus.yml
+    - include_tasks: tasks/1pass.yml
+    - include_tasks: tasks/bash_profile.yml
+    #- include_tasks: tasks/setup_firefox.yml

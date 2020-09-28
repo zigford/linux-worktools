@@ -7,6 +7,9 @@ import argparse
 import pathlib
 import configparser
 import os
+import json
+import getpass
+import gnupg
 
 parser = argparse.ArgumentParser()
 parser.add_argument("hostname", help="hostname to connect to")
@@ -27,6 +30,9 @@ parser.add_argument("-s", "--shortcut",
 parser.add_argument("-r", "--redirection",
                     help="Enable home drive redirection",
                     action="store_true")
+parser.add_argument("-p", "--password-backend", choices=['1password', 'tsini', 'gpg'])
+parser.add_argument("--snd",
+                    help="Pass sound devices", action="store_true")
 parser.add_argument("-d", "--debug", help="enable debug output", action="store_true")
 args = parser.parse_args()
 
@@ -37,6 +43,13 @@ cFile = cDir.joinpath('ts.ini')
 config.read(str(cFile))
 if not config.sections():
     sys.exit("Failed to read config")
+
+if not args.password_backend:
+    try:
+        backend = config['DEFAULT']['backend']
+    except:
+        print("No password backend configured in ini. Using tsini")
+        backend = 'tsini'
 
 user = config[config['DEFAULT']['user']]
 
@@ -57,7 +70,37 @@ else:
         user = config[args.username]
 
 username = user['domain'] + '\\' + user['username']
-pw = user['password']
+pw = None
+if backend == 'gpg':
+    gpg = gnupg.GPG(gnupghome=str(home.joinpath('.gnupg')))
+    passstorepath = home.joinpath('.password-store/work')
+    if user['domain'] == '':
+        passfiledomainpath = passstorepath.joinpath('ts')
+        passfilepath = passfiledomainpath.joinpath(user.name)
+    else:
+        passfiledomainpath = passstorepath.joinpath(user['domain'])
+        passfilepath = passfiledomainpath.joinpath(user['username'])
+    try:
+        passfile = open(str(passfilepath) + '.gpg', "rb")
+        pw = str(gpg.decrypt_file(passfile)).partition('\n')[0]
+    except:
+        print("file not found in gpg store")
+elif backend == '1password':
+    cmdargs = ["op", "get", "item", "--vault", "Personal", user['username']]
+    pwproc = subprocess.Popen(cmdargs, stdout=subprocess.PIPE)
+    pwout = pwproc.stdout.read()
+    pwjson = json.loads(pwout)
+
+    for field in pwjson['details']['sections'][0]['fields']:
+        if field['n'] == 'password':
+            pw = field['v']
+else:
+    pw = user['password']
+
+if pw == None:
+    pw = user['password']
+if pw == None:
+    pw = getpass.getpass(prompt='Password: ')
 
 if args.vmname:
     vmpath = pathlib.Path("/home/harrisj/.ts/{}/{}".format(hostname,
@@ -77,36 +120,17 @@ else:
 ip = socket.gethostbyname(hostname)
 cmdargs = ["xfreerdp", "/v:{}".format(ip), "/cert-tofu", "/cert-ignore",  
         "/u:{}".format(username), "/p:{}".format(pw),
-        "/dynamic-resolution"]
+        "/dynamic-resolution", "/title:{}".format(hostname),
+        "/wm-class:ts"]
+if args.snd:
+    cmdargs.append("/sound")
+    cmdargs.append("/microphone")
 if args.console:
     cmdargs.append("/admin")
 if args.vmname:
     cmdargs.append("/vmconnect:{}".format(str(vmguid)))
 if args.fullscreen:
-    # Attempt to get almost fullscreen by getting current resolution
-    xrandrOut = subprocess.check_output(["xrandr"])
-    lookforconnected = False
-    for line in xrandrOut.splitlines():
-        line = str(line)
-        if " connected " in line:
-            if "disconnected" in line:
-                lookforconnected = True
-            else:
-                res = line.split(" ")[2].split('+')[0]
-                x = res.split('x')[0]
-                y = res.split('x')[1]
-        if lookforconnected:
-            if " connected " in line:
-                res = line.split(" ")[2].split('+')[0]
-                x = res.split('x')[0]
-                y = res.split('x')[1]
-
-
-    if x and y:
-        cmdargs.append("/h:{}".format(int(y) - 70))
-        cmdargs.append("/w:{}".format(int(x)))
-    else:
-        cmdargs.append("/f")
+    cmdargs.append("/multimon")
 
 if args.scale:
     cmdargs.append("/scale:180")
