@@ -435,9 +435,9 @@ get_config() {
         *)
             [[ -z "$2" ]] &&
                 echo "specify config and setting" && exit 1
-            awk -F"=" -v s="$1" -v c="$2" '{
+            awk -F"=" -v s="$1" -v c="[$2]" '{
                 if ($0 ~ /\[.*\]/) { 
-                    if ($0 ~ c) {
+                    if ($0 == c) {
                         in_s = 1
                     } else {
                         in_s = 0
