@@ -476,7 +476,7 @@ get_config() {
                     }
                 } else {
                     if (in_s) {
-                        if ($0 ~ s) {
+                        if ($1 == s) {
                             print $2
                         }
                 }
