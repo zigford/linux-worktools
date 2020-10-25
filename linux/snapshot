@@ -27,6 +27,37 @@ snapls() {
 	sort
 }
 
+subvolls() {
+    # find recursive subvols to snapshot
+    local LEVEL=$1
+    svl=$(btrfs subvol list "${ROOTSUBVOL}")
+
+    # if this is the first time called, we are looking for the root
+    # subvolumes level number. We will print the root subvolume path.
+    # and then call this function again with the root subvolumes level.
+    # then we will find child subvolumes and print there paths
+    if [ -z "$LEVEL" ]; then
+        ROOTLEVELLINE=$(echo "$svl" | grep "${SUBVOLUME##*/}$")
+        echo "$ROOTLEVELLINE" | awk '{print $NF}'
+        subvolls $(echo "$ROOTLEVELLINE" | awk '{ print $2 }')
+        return
+    fi
+
+    # loop over all subvolumes. If matching LEVEL, print its path and recall
+    # subvolls with new levle
+
+    while read line; do
+        #echo "doing thing: $line"
+        if echo "$line" | grep -q "\(\w\+ \)\{6,\}${LEVEL} "; then
+            # 589 match
+            # print out path
+            echo "$line" | awk '{print $NF}'
+            # recall subvolls with new LEVEL
+            subvolls "$(echo $line | awk '{print $2}')"
+        fi
+    done < <(echo "$svl")
+}
+
 snapshot() {
     [[ ! -d "${LOCAL_SNAPSHOT_MOUNT}" ]] && mkdir "${LOCAL_SNAPSHOT_MOUNT}"
     if [[ -z "$noop" ]]
