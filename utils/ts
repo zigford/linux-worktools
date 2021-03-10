@@ -30,6 +30,9 @@ parser.add_argument("-s", "--shortcut",
 parser.add_argument("-r", "--redirection",
                     help="Enable home drive redirection",
                     action="store_true")
+parser.add_argument("-ra", "--restricted-admin",
+                    help="Enable restricted admin",
+                    action="store_true")
 parser.add_argument("-p", "--password-backend", choices=['1password', 'tsini', 'gpg'])
 parser.add_argument("--snd",
                     help="Pass sound devices", action="store_true")
@@ -138,6 +141,10 @@ if args.scale:
 if args.redirection:
     cmdargs.append("/drive:auto,*")
     cmdargs.append("/drive:home,/home/harrisj")
+
+if args.restricted_admin:
+    cmdargs.append("/restricted-admin")
+    cmdargs.append("/admin")
 
 if args.debug:
     print("Executing {}".format(cmdargs))
