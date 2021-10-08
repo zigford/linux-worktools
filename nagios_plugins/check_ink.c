@@ -500,7 +500,7 @@ int main(int argc, char *argv[])
         while ( token != NULL ) {
             if (strstr(token, "alt=")) {
                 token = strtok(NULL, " \"");
-                //printf("%s\n", token); //colour
+                printf("%s\n", token); //colour
                 token = strtok(NULL, " \"");
                 token = strtok(NULL, " \"");
                 token = strtok(NULL, " \"");
