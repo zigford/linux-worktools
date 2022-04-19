@@ -102,7 +102,7 @@ else:
 
 if pw == None:
     pw = user['password']
-if pw == None:
+if pw == None or pw == "":
     pw = getpass.getpass(prompt='Password: ')
 
 if args.vmname:
