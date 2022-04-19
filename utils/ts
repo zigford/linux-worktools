@@ -75,7 +75,7 @@ else:
 username = user['domain'] + '\\' + user['username']
 pw = None
 if backend == 'gpg':
-    gpg = gnupg.GPG(gnupghome=str(home.joinpath('.gnupg')))
+    gpg = gnupg.GPG(gnupghome=str(home.joinpath('.gnupg')),gpgbinary='/bin/gpg2',verbose=args.debug)
     passstorepath = home.joinpath('.password-store/work')
     if user['domain'] == '':
         passfiledomainpath = passstorepath.joinpath('ts')
