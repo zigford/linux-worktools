@@ -164,6 +164,11 @@ get_keep_snapshots() {
     hourly_in_last_day "$@"
 }
 
+get_persistent_snapshots() {
+    monthly_in_last_year "$@"
+    daily_in_last_month "$@"
+}
+
 invert_list() {
     NOTLIST="$1"
     SNAPVOLUME="$2"
@@ -307,7 +312,7 @@ backup_snapshots(){
     # 4. Foreach one, send it across and once it is send
     #    delete it locally except the last one.
     all_extern_snaps=$(snapls "${config}" "${EXTERN_SNAPSHOT_MOUNT}")
-    all_intern_snaps=$(snapls "${config}" "${LOCAL_SNAPSHOT_MOUNT}")
+    all_intern_snaps=$(get_persistent_snapshots "${config}" "${LOCAL_SNAPSHOT_MOUNT}")
     num_of_extern_snaps=$(num_of_snaps "$all_extern_snaps")
     num_of_intern_snaps=$(num_of_snaps "$all_intern_snaps")
     echo "there are $num_of_intern_snaps snapshots of $config"
