@@ -327,20 +327,15 @@ backup_snapshots(){
 }
 
 list_qgroups() {
-    path=$1
-    # try list qgroups once to test if
-    if ! qg=$(btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" 2>&1 > /dev/null) ||
-        [ "${qg%%:*}" == "WARNING" ]
-    then
-        echo "scanning btrfs quotas..."
-        btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
-        btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
-    fi
+    # always force a rescan
+    echo "scanning btrfs quotas..." >&2
+    btrfs quota enable "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
+    btrfs quota rescan -w "${EXTERN_SNAPSHOT_MOUNT}" > /dev/null
     btrfs qgroup show --raw "${EXTERN_SNAPSHOT_MOUNT}" | awk '
     {
         sub(/[0-9]\//,"",$1)
-        if (NR>3) print
-    }' | sort
+        if (NR>3 && ($2!="0" && $3!="0")) print
+    }' | sort -n
 
 }
 
@@ -349,7 +344,7 @@ list_subvols() {
     {
         for (i=2;i<=NF;i++){printf "%s ", $i}
         printf "\n"
-    }' | sort
+    }' | sort -n
 }
 
 cleanup_old_snaps() {
